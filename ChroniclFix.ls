@@ -368,7 +368,7 @@ void RenderGraphMain()
   uint dir_scaling = SliderInt("dir_scaling", 1, 10, 4);
   uvec2 c0_probe_size = uvec2(SliderInt("c0_probe_size", 1, 10, 2));
   float c0_dist = SliderFloat("c0_dist", 0.0f, 40.0f, 3.0f);
-  uint fix_checkerboard = SliderInt("fix checkerboard", 0, 1, 0);
+  uint fix_checkerboard = SliderInt("fix checkerboard", 0, 1, 1);
   uint force_bilinear = SliderInt("force bilinear fix", 0, 1, 0);
 
   Image scene_img = GetImage(size, rgba16f);
