@@ -25,15 +25,45 @@ void OverlayTexShader(
   }
 }}
 
-[include: "pcg", "bessel"]
-void FinalGatheringShader(
-  uvec2 size,
-  sampler2D atlas_tex,
+[include: "pcg", "complex", "bessel"]
+[declaration: "scene"]
+{{
+  Complex GetSceneField(uvec2 scene_size, vec2 pos)
+  {
+    vec2 center_pos = vec2(scene_size) / 2.0f;
+    float l = length(pos - center_pos);
+    return Complex(bessj0(l), bessy0(l));
+  }
+}}
+
+[include: "scene"]
+[include: "scene"]
+void ExtractField(
+  uvec2 scene_size,
+  uvec2 field_size,
+  vec2 field_p0,
+  vec2 field_p1,
   out vec4 color)
 {{
-  vec2 center_pos = vec2(size) / 2.0f;
-  float l = length(gl_FragCoord.xy - center_pos);
-  color = vec4(bessj0(l), bessy0(l), 0.0f, 1.0f);
+  vec2 ratio = gl_FragCoord.xy / vec2(field_size);
+  vec2 pos = mix(field_p0, field_p1, ratio.x);
+  Complex field_val = GetSceneField(scene_size, pos);
+  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+}}
+
+
+[include: "scene"]
+void FinalGatheringShader(
+  uvec2 scene_size,
+  vec2 field_p0,
+  vec2 field_p1,
+  sampler2D field_tex,
+  out vec4 color)
+{{
+  Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
+  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+
+  vec4 field_aabb = vec4(field_p0 + vec2(0.0f, 10.0f), field_p1);
 }}
 
 [rendergraph]
@@ -45,8 +75,14 @@ void RenderGraphMain()
     uvec2 size = GetSwapchainImage().GetSize();
     ClearShader(GetSwapchainImage());
 
-    Image scene_img = GetImage(size, rgba32f);
-    FinalGatheringShader(size, scene_img, GetSwapchainImage());
+    vec2 field_p0 = vec2(100, 100);
+    vec2 field_p1 = vec2(200, 100);
+    uvec2 field_res = uvec2(128, 1);
+    Image test_field_img = GetImage(field_res, rgba32f);
+    ExtractField(size, field_res, field_p0, field_p1, test_field_img);
+    FinalGatheringShader(size, field_p0, field_p1, test_field_img, GetSwapchainImage());
+
+
     //OverlayTexShader(
     //  merged_atlas_img,
     //  GetSwapchainImage()); 
