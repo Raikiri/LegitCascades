@@ -25,7 +25,7 @@ void OverlayTexShader(
   }
 }}
 
-[include: "pcg", "complex", "bessel"]
+[include: "pcg", "green"]
 [declaration: "scene"]
 {{
   float wavelength = 10.0f;
@@ -33,8 +33,8 @@ void OverlayTexShader(
   {
     vec2 center_pos = vec2(scene_size) / 2.0f;
     float l = length(pos - center_pos);
-    float phase = l / wavelength * 2.0f * pi;
-    return Complex(bessj0(phase), bessy0(phase));
+    float wave_number = 2.0f * pi / wavelength;
+    return Green2D(l, wave_number);
   }
 }}
 
@@ -44,111 +44,95 @@ void ExtractField(
   uvec2 field_size,
   vec2 field_p0,
   vec2 field_p1,
+  vec2 sample_offset,
   out vec4 color)
 {{
   vec2 ratio = floor(gl_FragCoord.xy) / vec2(field_size);
-  vec2 pos = mix(field_p0, field_p1, ratio.x);
+  vec2 pos = mix(field_p0, field_p1, ratio.x) + sample_offset;
   Complex field_val = GetSceneField(scene_size, pos);
   color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 }}
 
-[include: "complex", "bessel"]
-[declaration: "planar_waves"]
+[include: "scene", "green"]
+void ExtractKernel(
+  vec2 field_p0,
+  vec2 field_p1,
+  uvec2 size,
+  vec2 sample_offset,
+  out vec4 color)
 {{
+  int unshifted_idx = int(gl_FragCoord.x);
+  int shifted_idx = ShiftIndex(unshifted_idx, int(size.x));
+  float ratio = float(shifted_idx) / float(size.x);
+  vec2 sample_pos = sample_offset + (field_p1 - field_p0) * ratio;
+  
+  float wave_number = 2.0f * pi / wavelength;
+  Complex field = Green2D(length(sample_pos), wave_number);
+  //Complex field = Green2DDipole(sample_pos, vec2(0.0f, 1.0f), wave_number);
 
-  vec2 GetPlanarWaveVec(vec2 dir, vec2 tangent, float linear_wave_vec, float wavelength)
+  color = vec4(field, 0.0f, 0.0f);
+}}
+
+
+[include: "complex", "bessel"]
+[declaration: "green"]
+{{
+  // Line-source simulation for shallow-seismic data. Part 1: theoretical background Thomas Forbriger, Lisa Groos, Martin Sch�fer
+  //https://academic.oup.com/gji/article/198/3/1387/584651 (22-28)
+  Complex Green3D(float r, float wave_number)
   {
-    float wave_vec_len = 2.0f * pi / wavelength;
-    float tangent_wave_vec_sqr = wave_vec_len * wave_vec_len - linear_wave_vec * linear_wave_vec;
-    return dir * linear_wave_vec + tangent * sqrt(max(tangent_wave_vec_sqr, 0.0f));
+    return ExpI(r * wave_number) / float(4.0f * pi * max(1e-9f, r));
   }
 
-
-  struct PlanarWave
+  Complex Green2D(float r, float wave_number)
   {
-    ComplexVec wave_vec;
-    Complex phase_mult;
-  };
-  //add deconvolution?
-  PlanarWave GetPlanarWaveFromHarmonic(vec2 p0, vec2 p1, int harmonic_idx, int size, float wavelength)
-  {
-    vec2 dir = normalize(p1 - p0);
-    vec2 tangent = -vec2(-dir.y, dir.x);
-    float l = length(p0 - p1);
-
-    int shifted_idx = ShiftIndex(harmonic_idx, size);
-    float wave_vec_1d = float(shifted_idx) * 2.0f * pi / l;
-
-    PlanarWave localWave;
-    vec2 wave_vec = GetPlanarWaveVec(dir, tangent, wave_vec_1d, wavelength);
-
-    float wave_vec_len = 2.0f * pi / wavelength;
-    float tangent_wave_vec_sqr = wave_vec_len * wave_vec_len - wave_vec_1d * wave_vec_1d;
-
-    PlanarWave planar_wave;
-    if(tangent_wave_vec_sqr > 0.0f)
-    {
-      planar_wave.wave_vec = ComplexVecFromReIm(dir * wave_vec_1d + tangent * sqrt(tangent_wave_vec_sqr), Complex(0.0f));
-    }else
-    {
-      planar_wave.wave_vec = ComplexVecFromReIm(dir * wave_vec_1d, +tangent * sqrt(-tangent_wave_vec_sqr));
-    }
-    ComplexVec center_delta = ComplexVecFromReIm((p1 - p0) / 2.0f, Complex(0.0f));
-    Complex complex_phase = MulI(ComplexDot(planar_wave.wave_vec, center_delta));
-    planar_wave.phase_mult = Exp(complex_phase) / float(size);
-    return planar_wave;
+    return Mul(Complex(0.0f, 1.0f / 4.0f), Hankel10(max(1e-9f, r) * wave_number));
   }
 
-  float GetOcclusionFactor(vec2 pos, vec2 p0, vec2 p1, ComplexVec wave_vec)
+  Complex Green1D(float r, float wave_number)
   {
-    vec2 real_dir = normalize(vec2(wave_vec.x.x, wave_vec.y.x));
-    vec2 tangent = vec2(-real_dir.y, real_dir.x);
-    float side0 = dot(pos - p0, tangent);
-    float side1 = dot(pos - p1, tangent);
-    return (side0 * side1 < 0.0f) ? 1.0f : 0.0f;
+    return Mul(Complex(0.0f, 1.0 / (2.0 * wave_number)), ExpI(abs(r) * wave_number));
   }
-  Complex ReconstructField(
-    vec2 pos,
-    vec2 p0,
-    vec2 p1,
-    sampler2D field_fft,
-    int size,
-    int simulate_evanescent_waves,
-    int simulate_wave_occlusion,
-    float wavelength)
-  {
-    vec2 center = (p0 + p1) * 0.5f;
 
-    float ratio = dot(pos - p0, p1 - p0) / dot(p1 - p0, p1 - p0);
-    int j = int(ratio * float(size));
+  Complex Green2DDipole(vec2 r, vec2 dir, float wave_number)
+  {
+    //Scalar eps = Scalar(1e-5f);
+    //return (Green2D(glm::length(r + dir * eps), wave_number) - Green2D(glm::length(r - dir * eps), wave_number)) / (Scalar(2.0f) * eps);
+    float l = length(r);
+    float cos_ang = dot(r, dir) / max(1e-9f, l);
+    return Mul(Complex(0.0f, -wave_number / 4.0f), Hankel11(max(1e-9f, l) * wave_number) * cos_ang);
+  }
+}}
+
+
+[include: "scene", "green"]
+[declaration: "charge_integration"]
+{{
+  Complex IntegrateCharges(vec2 p0, vec2 p1, sampler2D charge_img, int size)
+  {
+    float wave_number = 2.0f * pi / wavelength;
+    vec2 target_pos = gl_FragCoord.xy;
+
     Complex res = Complex(0.0f);
-    for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
+    for(int i = 0; i < size; i++)
     {
-      PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, size, wavelength);
-      Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, 0), 0).xy;
-      ComplexVec delta = ComplexVecFromReIm(pos - center, Complex(0.0f));
-      Complex complex_phase = MulI(ComplexDot(delta, planar_wave.wave_vec));
-      if(simulate_evanescent_waves == 0)
-      {
-        complex_phase.x = 0.0f;
-      }
-      complex_phase.x = -abs(complex_phase.x); //should this be needed?
-      contrib = Mul(contrib, Exp(complex_phase));
-      contrib = Mul(contrib, planar_wave.phase_mult);
-      if(simulate_wave_occlusion != 0)
-        contrib *= GetOcclusionFactor(pos, p0, p1, planar_wave.wave_vec);
-      res += contrib;
+      float ratio = float(i) / float(size);
+      vec2 charge_pos = mix(p0, p1, ratio);
+      Complex charge = texelFetch(charge_img, ivec2(i, 0), 0).xy;
+      res += Mul(Green2D(length(charge_pos - target_pos), wave_number), charge);
+      //res += Mul(Green2DDipole(target_pos - charge_pos, vec2(0.0f, 1.0f), wave_number), charge);
     }
     return res;
   }
 }}
 
-[include: "scene", "planar_waves"]
+[include: "scene", "charge_integration"]
 void FinalGatheringShader(
   uvec2 scene_size,
   vec2 field_p0,
   vec2 field_p1,
-  sampler2D field_tex,
+  sampler2D charge_img,
+  sampler2D kernel_tex,
   int field_size,
   float reconstructed_size,
   int simulate_evanescent_waves,
@@ -158,17 +142,65 @@ void FinalGatheringShader(
   Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
   color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 
-  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -reconstructed_size), field_p1 + vec2(reconstructed_size, reconstructed_size));
+  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size * 0.0f, -reconstructed_size), field_p1 + vec2(reconstructed_size * 0.0f, reconstructed_size));
   vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
   if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
   {
-    color = texture(field_tex, uv);
-    color = vec4(ReconstructField(gl_FragCoord.xy, field_p0, field_p1, field_tex, field_size, simulate_evanescent_waves, simulate_wave_occlusion, wavelength), 0.0f, 1.0f);
+    //color = texture(kernel_tex, uv);
+    //color = vec4(ReconstructField(gl_FragCoord.xy, field_p0, field_p1, field_tex, field_size, simulate_evanescent_waves, simulate_wave_occlusion, wavelength), 0.0f, 1.0f);
+    color = vec4(IntegrateCharges(field_p0, field_p1, charge_img, field_size), 0.0f, 1.0f);
+    //color.xy = field_val - color.xy;
+  }
+}}
+
+[include: "scene", "green"]
+void CreateCharges(
+  vec2 field_p0,
+  vec2 field_p1,
+  vec2 sample_offset,
+  int size,
+  out vec4 color)
+{{
+  int unshifted_idx = int(gl_FragCoord.x);
+  color = vec4(0.0f);
+  if(unshifted_idx == size / 2)
+    color = vec4(1.0f, 0.0f, 0.0f, 0.0f);
+}}
+
+[include: "complex"]
+void Deconvolve(
+  sampler2D convolved_fft_img,
+  sampler2D kernel_fft_img,
+  out vec4 color)
+{{
+  int idx = int(gl_FragCoord.x);
+  Complex convolved = texelFetch(convolved_fft_img, ivec2(idx, 0), 0).xy;
+  Complex kernel = texelFetch(kernel_fft_img, ivec2(idx, 0), 0).xy;
+  color = vec4(Div(convolved, kernel), 0.0f, 1.0f);
+}}
+
+[declaration: "charge_reconstruction"]
+{{
+  Image ReconstructCharges(vec2 p0, vec2 p1, vec2 sample_offset, Image field_img, Image kernel_img, int size)
+  {
+    Image field_fft_img = GetImage(uvec2(size, 1), rgba32f);
+    DFT1(field_img, uvec2(size, 1), 1, field_fft_img);
+
+    Image kernel_fft_img = GetImage(uvec2(size, 1), rgba32f);
+    DFT1(kernel_img, kernel_img.GetSize(), 1, kernel_fft_img);
+
+    Image charge_fft_img = GetImage(uvec2(size, 1), rgba32f);
+    Deconvolve(field_fft_img, kernel_fft_img, charge_fft_img);
+
+    Image charge_img = GetImage(uvec2(size, 1), rgba32f);
+    DFT1(charge_fft_img, uvec2(size, 1), 0, charge_img);
+    //CreateCharges(p0, p1, sample_offset, size, charge_img);
+    return charge_img;
   }
 }}
 
 [rendergraph]
-[include: "fps"]
+[include: "fps", "charge_reconstruction"]
 void RenderGraphMain()
 {{
   if(Checkbox("Run"))
@@ -179,8 +211,23 @@ void RenderGraphMain()
     vec2 field_p0 = vec2(100, 100);
     vec2 field_p1 = vec2(500, 100);
     uvec2 field_res = uvec2(SliderInt("DFT resolution", 16, 1024, 256), 1);
+
+    vec2 sample_offset = vec2(
+      0.0f,
+      SliderFloat("Sample offset y", -20.0f, 20.0f, 0.0f)
+    );
+    Image kernel_img = GetImage(field_res, rgba32f);
+    ExtractKernel(
+      field_p0,
+      field_p1,
+      field_res,
+      sample_offset,
+      kernel_img);
+
     Image field_img = GetImage(field_res, rgba32f);
-    ExtractField(size, field_res, field_p0, field_p1, field_img);
+    ExtractField(size, field_res, field_p0, field_p1, sample_offset, field_img);
+
+    Image charge_img = ReconstructCharges(field_p0, field_p1, sample_offset, field_img, kernel_img, field_res.x);
 
     Image field_img_fft = GetImage(field_res, rgba32f);
     DFT1(field_img, field_res, 1, field_img_fft);
@@ -191,7 +238,8 @@ void RenderGraphMain()
       size,
       field_p0,
       field_p1,
-      field_img_fft,
+      charge_img,
+      kernel_img,
       field_res.x,
       SliderFloat("Reconstruction zone size", 0.0f, 500.0f, 100.0f),
       SliderInt("Simulate evanescent waves", 0, 1, 1),
@@ -557,7 +605,14 @@ void DFT1(
     return ans;
   }
 
-
+  Complex Hankel10(float arg)
+  {
+    return Complex(bessj0(arg), bessy0(arg));
+  }
+  Complex Hankel11(float arg)
+  {
+    return Complex(bessj1(arg), bessy1(arg));
+  }
 }}
   
 [declaration: "fps"]
