@@ -66,7 +66,7 @@ void ExtractField(
 
   struct PlanarWave
   {
-    vec2 wave_vec;
+    ComplexVec wave_vec;
     Complex phase_mult;
   };
 
@@ -88,17 +88,17 @@ void ExtractField(
     PlanarWave planar_wave;
     if(tangent_wave_vec_sqr > 0.0f)
     {
-      planar_wave.wave_vec = dir * wave_vec_1d + tangent * sqrt(tangent_wave_vec_sqr);
+      planar_wave.wave_vec = ComplexVecFromReIm(dir * wave_vec_1d + tangent * sqrt(tangent_wave_vec_sqr), Complex(0.0f));
     }else
     {
-      planar_wave.wave_vec = dir * wave_vec_1d;
+      planar_wave.wave_vec = ComplexVecFromReIm(dir * wave_vec_1d, -tangent * sqrt(-tangent_wave_vec_sqr));
     }
-    vec2 center_delta = (p1 - p0) / 2.0f;
-    planar_wave.phase_mult = ExpI(-dot(planar_wave.wave_vec, center_delta)) / float(size);
+    ComplexVec center_delta = ComplexVecFromReIm((p1 - p0) / 2.0f, Complex(0.0f));
+    planar_wave.phase_mult = Exp(-MulI(ComplexDot(planar_wave.wave_vec, center_delta))) / float(size);
     return planar_wave;
   }
 
-  Complex ReconstructField(vec2 pos, vec2 p0, vec2 p1, sampler2D field_fft, int size, float wavelength)
+  Complex ReconstructField(vec2 pos, vec2 p0, vec2 p1, sampler2D field_fft, int size, int simulate_evanescent_waves, float wavelength)
   {
     vec2 center = (p0 + p1) * 0.5f;
 
@@ -108,8 +108,14 @@ void ExtractField(
     for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
     {
       PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, size, wavelength);
+      if(simulate_evanescent_waves == 0)
+      {
+        planar_wave.wave_vec.x.y = 0.0f;
+        planar_wave.wave_vec.y.y = 0.0f;
+      }
       Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, 0), 0).xy;
-      contrib = Mul(contrib, ExpI(dot(pos - center, planar_wave.wave_vec)));
+      ComplexVec delta = ComplexVecFromReIm(pos - center, Complex(0.0f));
+      contrib = Mul(contrib, Exp(MulI(ComplexDot(delta, planar_wave.wave_vec))));
       contrib = Mul(contrib, planar_wave.phase_mult);
       res += contrib;
     }
@@ -125,6 +131,7 @@ void FinalGatheringShader(
   sampler2D field_tex,
   int field_size,
   float reconstructed_height,
+  int simulate_evanescent_waves,
   out vec4 color)
 {{
   Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
@@ -135,7 +142,7 @@ void FinalGatheringShader(
   if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
   {
     color = texture(field_tex, uv);
-    color = vec4(ReconstructField(gl_FragCoord.xy, field_p0, field_p1, field_tex, field_size, wavelength), 0.0f, 1.0f);
+    color = vec4(ReconstructField(gl_FragCoord.xy, field_p0, field_p1, field_tex, field_size, simulate_evanescent_waves, wavelength), 0.0f, 1.0f);
   }
 }}
 
@@ -159,8 +166,15 @@ void RenderGraphMain()
 
     //Image field_img_test = GetImage(field_res, rgba32f);
     //DFT1(field_img_fft, field_res, 0, field_img_test);
-
-    FinalGatheringShader(size, field_p0, field_p1, field_img_fft, field_res.x, SliderFloat("Reconstruction zone height", 0.0f, 500.0f, 200.0f), GetSwapchainImage());
+    FinalGatheringShader(
+      size,
+      field_p0,
+      field_p1,
+      field_img_fft,
+      field_res.x,
+      SliderFloat("Reconstruction zone height", 0.0f, 500.0f, 200.0f),
+      SliderInt("Simulate evanescent waves", 0, 1, 1),
+      GetSwapchainImage());
 
 
     //OverlayTexShader(
@@ -220,6 +234,10 @@ void CopyShader(sampler2D tex, out vec4 col)
   {
     return Complex(cos(theta), sin(theta));
   }
+  Complex Exp(Complex c)
+  {
+    return exp(c.x) * ExpI(c.y);
+  }
 
   Complex Conjugate(Complex c)
   {
@@ -243,6 +261,25 @@ void CopyShader(sampler2D tex, out vec4 col)
   Complex MulI(Complex a)
   {
     return Complex(-a.y, a.x);
+  }
+
+  struct ComplexVec
+  {
+    Complex x;
+    Complex y;
+  };
+
+  ComplexVec ComplexVecFromReIm(vec2 re, vec2 im)
+  {
+    ComplexVec res;
+    res.x = Complex(re.x, im.x);
+    res.y = Complex(re.y, im.y);
+    return res;
+  }
+
+  Complex ComplexDot(ComplexVec a, ComplexVec b)
+  {
+    return Mul(a.x, b.x) + Mul(a.y, b.y);
   }
 
   int ShiftIndex(int src_index, int size)
