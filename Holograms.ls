@@ -46,7 +46,7 @@ void ExtractField(
   vec2 field_p1,
   out vec4 color)
 {{
-  vec2 ratio = gl_FragCoord.xy / vec2(field_size);
+  vec2 ratio = floor(gl_FragCoord.xy) / vec2(field_size);
   vec2 pos = mix(field_p0, field_p1, ratio.x);
   Complex field_val = GetSceneField(scene_size, pos);
   color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
@@ -158,7 +158,7 @@ void FinalGatheringShader(
   Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
   color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 
-  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -reconstructed_size), field_p1 + vec2(reconstructed_size, reconstructed_size));
+  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -0.0f), field_p1 + vec2(reconstructed_size, reconstructed_size));
   vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
   if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
   {
