@@ -25,15 +25,117 @@ void OverlayTexShader(
   }
 }}
 
-[include: "pcg", "bessel"]
-void FinalGatheringShader(
-  uvec2 size,
-  sampler2D atlas_tex,
+[include: "pcg", "complex", "bessel"]
+[declaration: "scene"]
+{{
+  float wavelength = 10.0f;
+  Complex GetSceneField(uvec2 scene_size, vec2 pos)
+  {
+    vec2 center_pos = vec2(scene_size) / 2.0f;
+    float l = length(pos - center_pos);
+    float phase = l / wavelength * 2.0f * pi;
+    return Complex(bessj0(phase), bessy0(phase));
+  }
+}}
+
+[include: "scene"]
+void ExtractField(
+  uvec2 scene_size,
+  uvec2 field_size,
+  vec2 field_p0,
+  vec2 field_p1,
   out vec4 color)
 {{
-  vec2 center_pos = vec2(size) / 2.0f;
-  float l = length(gl_FragCoord.xy - center_pos);
-  color = vec4(bessj0(l), bessy0(l), 0.0f, 1.0f);
+  vec2 ratio = gl_FragCoord.xy / vec2(field_size);
+  vec2 pos = mix(field_p0, field_p1, ratio.x);
+  Complex field_val = GetSceneField(scene_size, pos);
+  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+}}
+
+[include: "complex", "bessel"]
+[declaration: "planar_waves"]
+{{
+
+  vec2 GetPlanarWaveVec(vec2 dir, vec2 tangent, float linear_wave_vec, float wavelength)
+  {
+    float wave_vec_len = 2.0f * pi / wavelength;
+    float tangent_wave_vec_sqr = wave_vec_len * wave_vec_len - linear_wave_vec * linear_wave_vec;
+    return dir * linear_wave_vec + tangent * sqrt(max(tangent_wave_vec_sqr, 0.0f));
+  }
+
+
+  struct PlanarWave
+  {
+    vec2 wave_vec;
+    Complex phase_mult;
+  };
+
+  PlanarWave GetPlanarWaveFromHarmonic(vec2 p0, vec2 p1, int harmonic_idx, int size, float wavelength)
+  {
+    vec2 dir = normalize(p1 - p0);
+    vec2 tangent = -vec2(-dir.y, dir.x);
+    float l = length(p0 - p1);
+
+    int shifted_idx = ShiftIndex(harmonic_idx, size);
+    float wave_vec_1d = float(shifted_idx) * 2.0f * pi / l;
+
+    PlanarWave localWave;
+    vec2 wave_vec = GetPlanarWaveVec(dir, tangent, wave_vec_1d, wavelength);
+
+    float wave_vec_len = 2.0f * pi / wavelength;
+    float tangent_wave_vec_sqr = wave_vec_len * wave_vec_len - wave_vec_1d * wave_vec_1d;
+
+    PlanarWave planar_wave;
+    if(tangent_wave_vec_sqr > 0.0f)
+    {
+      planar_wave.wave_vec = dir * wave_vec_1d + tangent * sqrt(tangent_wave_vec_sqr);
+    }else
+    {
+      planar_wave.wave_vec = dir * wave_vec_1d;
+    }
+    vec2 center_delta = (p1 - p0) / 2.0f;
+    planar_wave.phase_mult = ExpI(-dot(planar_wave.wave_vec, center_delta)) / float(size);
+    return planar_wave;
+  }
+
+  Complex ReconstructField(vec2 pos, vec2 p0, vec2 p1, sampler2D field_fft, int size, float wavelength)
+  {
+    vec2 center = (p0 + p1) * 0.5f;
+
+    float ratio = dot(pos - p0, p1 - p0) / dot(p1 - p0, p1 - p0);
+    int j = int(ratio * float(size));
+    Complex res = Complex(0.0f);
+    for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
+    {
+      PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, size, wavelength);
+      Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, 0), 0).xy;
+      contrib = Mul(contrib, ExpI(dot(pos - center, planar_wave.wave_vec)));
+      contrib = Mul(contrib, planar_wave.phase_mult);
+      res += contrib;
+    }
+    return res;
+  }
+}}
+
+[include: "scene", "planar_waves"]
+void FinalGatheringShader(
+  uvec2 scene_size,
+  vec2 field_p0,
+  vec2 field_p1,
+  sampler2D field_tex,
+  int field_size,
+  out vec4 color)
+{{
+  Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
+  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+
+  vec4 field_aabb = vec4(field_p0 + vec2(0.0f, 40.0f), field_p1);
+  vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
+  if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
+  {
+    color = texture(field_tex, uv);
+    color = vec4(ReconstructField(gl_FragCoord.xy, field_p0, field_p1, field_tex, field_size, wavelength), 0.0f, 1.0f);
+  }
 }}
 
 [rendergraph]
@@ -45,8 +147,21 @@ void RenderGraphMain()
     uvec2 size = GetSwapchainImage().GetSize();
     ClearShader(GetSwapchainImage());
 
-    Image scene_img = GetImage(size, rgba32f);
-    FinalGatheringShader(size, scene_img, GetSwapchainImage());
+    vec2 field_p0 = vec2(100, 100);
+    vec2 field_p1 = vec2(500, 100);
+    uvec2 field_res = uvec2(256, 1);
+    Image field_img = GetImage(field_res, rgba32f);
+    ExtractField(size, field_res, field_p0, field_p1, field_img);
+
+    Image field_img_fft = GetImage(field_res, rgba32f);
+    DFT1(field_img, field_res, 1, field_img_fft);
+
+    Image field_img_test = GetImage(field_res, rgba32f);
+    DFT1(field_img_fft, field_res, 0, field_img_test);
+
+    FinalGatheringShader(size, field_p0, field_p1, field_img_fft, field_res.x, GetSwapchainImage());
+
+
     //OverlayTexShader(
     //  merged_atlas_img,
     //  GetSwapchainImage()); 
@@ -128,26 +243,47 @@ void CopyShader(sampler2D tex, out vec4 col)
   {
     return Complex(-a.y, a.x);
   }
+
+  int ShiftIndex(int src_index, int size)
+  {
+    return ((src_index + size / 2) % size) - size / 2;
+  }
+
+  int UnShiftIndex(int src_index, int size)
+  {
+    return (((src_index + size) % size) + size) % size;
+  }
+
+  ivec2 ShiftIndex(ivec2 src_index, ivec2 size)
+  {
+    return ((src_index + size / 2) % size) - size / 2;
+  }
+
+  ivec2 UnShiftIndex(ivec2 src_index, ivec2 size)
+  {
+    return (((src_index + size) % size) + size) % size;
+  }
 }}
 
 [include: "config", "complex"]
 void DFT1(
   sampler2D src_tex,
-  uint size,
+  uvec2 size,
   uint is_forward,
   out vec4 color)
 {{
   float phase_dir = (is_forward == 1u) ? -1.0f : 1.0f;
-  float mult = (is_forward == 1u) ? 1.0f : (1.0f / float(size));
+  float mult = (is_forward == 1u) ? 1.0f : (1.0f / float(size.x));
   vec4 harmonic = vec4(0.0f);
 
   uint i = uint(gl_FragCoord.x);
-  for (uint j = 0u; j < size; j++)
+  uint y = uint(gl_FragCoord.y);
+  for (uint j = 0u; j < size.x; j++)
   {
-    vec4 src_pixel = texelFetch(src_tex, ivec2(j, 0), 0);
+    vec4 src_pixel = texelFetch(src_tex, ivec2(j, y), 0);
     harmonic += vec4(
-      Mul(src_pixel.xy, ExpI(2.0f * phase_dir * pi / float(size * i * j))),
-      Mul(src_pixel.zw, ExpI(2.0f * phase_dir * pi / float(size * i * j))));
+      Mul(src_pixel.xy, ExpI(2.0f * phase_dir * pi * float(i * j) / float(size.x))),
+      Mul(src_pixel.zw, ExpI(2.0f * phase_dir * pi * float(i * j) / float(size.x))));
   }
   color = harmonic * mult;
 }}
