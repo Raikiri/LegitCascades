@@ -158,7 +158,7 @@ void FinalGatheringShader(
   Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
   color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 
-  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -0.0f), field_p1 + vec2(reconstructed_size, reconstructed_size));
+  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -reconstructed_size), field_p1 + vec2(reconstructed_size, reconstructed_size));
   vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
   if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
   {
