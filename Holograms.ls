@@ -91,14 +91,31 @@ void ExtractField(
       planar_wave.wave_vec = ComplexVecFromReIm(dir * wave_vec_1d + tangent * sqrt(tangent_wave_vec_sqr), Complex(0.0f));
     }else
     {
-      planar_wave.wave_vec = ComplexVecFromReIm(dir * wave_vec_1d, -tangent * sqrt(-tangent_wave_vec_sqr));
+      planar_wave.wave_vec = ComplexVecFromReIm(dir * wave_vec_1d, +tangent * sqrt(-tangent_wave_vec_sqr));
     }
     ComplexVec center_delta = ComplexVecFromReIm((p1 - p0) / 2.0f, Complex(0.0f));
-    planar_wave.phase_mult = Exp(-MulI(ComplexDot(planar_wave.wave_vec, center_delta))) / float(size);
+    Complex complex_phase = MulI(ComplexDot(planar_wave.wave_vec, center_delta));
+    planar_wave.phase_mult = Exp(complex_phase) / float(size);
     return planar_wave;
   }
 
-  Complex ReconstructField(vec2 pos, vec2 p0, vec2 p1, sampler2D field_fft, int size, int simulate_evanescent_waves, float wavelength)
+  float GetOcclusionFactor(vec2 pos, vec2 p0, vec2 p1, ComplexVec wave_vec)
+  {
+    vec2 real_dir = normalize(vec2(wave_vec.x.x, wave_vec.y.x));
+    vec2 tangent = vec2(-real_dir.y, real_dir.x);
+    float side0 = dot(pos - p0, tangent);
+    float side1 = dot(pos - p1, tangent);
+    return (side0 * side1 < 0.0f) ? 1.0f : 0.0f;
+  }
+  Complex ReconstructField(
+    vec2 pos,
+    vec2 p0,
+    vec2 p1,
+    sampler2D field_fft,
+    int size,
+    int simulate_evanescent_waves,
+    int simulate_wave_occlusion,
+    float wavelength)
   {
     vec2 center = (p0 + p1) * 0.5f;
 
@@ -108,15 +125,18 @@ void ExtractField(
     for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
     {
       PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, size, wavelength);
-      if(simulate_evanescent_waves == 0)
-      {
-        planar_wave.wave_vec.x.y = 0.0f;
-        planar_wave.wave_vec.y.y = 0.0f;
-      }
       Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, 0), 0).xy;
       ComplexVec delta = ComplexVecFromReIm(pos - center, Complex(0.0f));
-      contrib = Mul(contrib, Exp(MulI(ComplexDot(delta, planar_wave.wave_vec))));
+      Complex complex_phase = MulI(ComplexDot(delta, planar_wave.wave_vec));
+      if(simulate_evanescent_waves == 0)
+      {
+        complex_phase.x = 0.0f;
+      }
+      complex_phase.x = -abs(complex_phase.x); //should this be needed?
+      contrib = Mul(contrib, Exp(complex_phase));
       contrib = Mul(contrib, planar_wave.phase_mult);
+      if(simulate_wave_occlusion != 0)
+        contrib *= GetOcclusionFactor(pos, p0, p1, planar_wave.wave_vec);
       res += contrib;
     }
     return res;
@@ -130,19 +150,20 @@ void FinalGatheringShader(
   vec2 field_p1,
   sampler2D field_tex,
   int field_size,
-  float reconstructed_height,
+  float reconstructed_size,
   int simulate_evanescent_waves,
+  int simulate_wave_occlusion,
   out vec4 color)
 {{
   Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
   color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 
-  vec4 field_aabb = vec4(field_p0 + vec2(0.0f, reconstructed_height), field_p1);
+  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -reconstructed_size), field_p1 + vec2(reconstructed_size, reconstructed_size));
   vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
   if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
   {
     color = texture(field_tex, uv);
-    color = vec4(ReconstructField(gl_FragCoord.xy, field_p0, field_p1, field_tex, field_size, simulate_evanescent_waves, wavelength), 0.0f, 1.0f);
+    color = vec4(ReconstructField(gl_FragCoord.xy, field_p0, field_p1, field_tex, field_size, simulate_evanescent_waves, simulate_wave_occlusion, wavelength), 0.0f, 1.0f);
   }
 }}
 
@@ -172,8 +193,9 @@ void RenderGraphMain()
       field_p1,
       field_img_fft,
       field_res.x,
-      SliderFloat("Reconstruction zone height", 0.0f, 500.0f, 200.0f),
+      SliderFloat("Reconstruction zone size", 0.0f, 500.0f, 100.0f),
       SliderInt("Simulate evanescent waves", 0, 1, 1),
+      SliderInt("Simulate wave occlusion", 0, 1, 1),
       GetSwapchainImage());
 
 
