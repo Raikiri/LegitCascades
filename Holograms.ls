@@ -69,7 +69,7 @@ void ExtractField(
     ComplexVec wave_vec;
     Complex phase_mult;
   };
-
+  //add deconvolution?
   PlanarWave GetPlanarWaveFromHarmonic(vec2 p0, vec2 p1, int harmonic_idx, int size, float wavelength)
   {
     vec2 dir = normalize(p1 - p0);
