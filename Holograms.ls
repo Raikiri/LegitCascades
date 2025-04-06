@@ -124,12 +124,13 @@ void FinalGatheringShader(
   vec2 field_p1,
   sampler2D field_tex,
   int field_size,
+  float reconstructed_height,
   out vec4 color)
 {{
   Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
   color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 
-  vec4 field_aabb = vec4(field_p0 + vec2(0.0f, 40.0f), field_p1);
+  vec4 field_aabb = vec4(field_p0 + vec2(0.0f, reconstructed_height), field_p1);
   vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
   if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
   {
@@ -149,17 +150,17 @@ void RenderGraphMain()
 
     vec2 field_p0 = vec2(100, 100);
     vec2 field_p1 = vec2(500, 100);
-    uvec2 field_res = uvec2(256, 1);
+    uvec2 field_res = uvec2(SliderInt("DFT resolution", 16, 1024, 256), 1);
     Image field_img = GetImage(field_res, rgba32f);
     ExtractField(size, field_res, field_p0, field_p1, field_img);
 
     Image field_img_fft = GetImage(field_res, rgba32f);
     DFT1(field_img, field_res, 1, field_img_fft);
 
-    Image field_img_test = GetImage(field_res, rgba32f);
-    DFT1(field_img_fft, field_res, 0, field_img_test);
+    //Image field_img_test = GetImage(field_res, rgba32f);
+    //DFT1(field_img_fft, field_res, 0, field_img_test);
 
-    FinalGatheringShader(size, field_p0, field_p1, field_img_fft, field_res.x, GetSwapchainImage());
+    FinalGatheringShader(size, field_p0, field_p1, field_img_fft, field_res.x, SliderFloat("Reconstruction zone height", 0.0f, 500.0f, 200.0f), GetSwapchainImage());
 
 
     //OverlayTexShader(
