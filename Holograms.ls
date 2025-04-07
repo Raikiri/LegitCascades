@@ -38,18 +38,33 @@ void OverlayTexShader(
   }
 }}
 
-[include: "scene"]
+[include: "scene", "planar_waves"]
 void ExtractField(
   uvec2 scene_size,
   uvec2 field_size,
   vec2 field_p0,
   vec2 field_p1,
+  sampler2D ref_field_fft,
+  int slice_idx,
   out vec4 color)
 {{
   vec2 ratio = floor(gl_FragCoord.xy) / vec2(field_size);
   vec2 pos = mix(field_p0, field_p1, ratio.x);
   Complex field_val = GetSceneField(scene_size, pos);
-  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+
+  field_val -= ReconstructRefField(pos, ref_field_fft, int(scene_size.x), int(field_size.x), wavelength);
+
+  color = vec4(0.0f);
+  if(slice_idx == 0)
+  {
+    if(ratio.x > 0.25f && ratio.x < 0.55f)
+      color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+  }
+  if(slice_idx == 1)
+  {
+    if(ratio.x > 0.15f && ratio.x < 0.25f || ratio.x > 0.6f && ratio.x < 0.9f)
+      color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+  }
 }}
 
 [include: "complex", "bessel"]
@@ -96,6 +111,12 @@ void ExtractField(
     ComplexVec center_delta = ComplexVecFromReIm((p1 - p0) / 2.0f, Complex(0.0f));
     Complex complex_phase = MulI(ComplexDot(planar_wave.wave_vec, center_delta));
     planar_wave.phase_mult = Exp(complex_phase) / float(size);
+    if(tangent_wave_vec_sqr <= 0.0f)
+    {
+      planar_wave.phase_mult *= 0.0f;
+      planar_wave.wave_vec = ComplexVecFromReIm(vec2(0.0f), vec2(0.0f));
+    }
+
     return planar_wave;
   }
 
@@ -107,6 +128,29 @@ void ExtractField(
     float side1 = dot(pos - p1, tangent);
     return (side0 * side1 < 0.0f) ? 1.0f : 0.0f;
   }
+
+  PlanarWave GetReferenceWave(
+    int harmonic_idx,
+    vec2 p0,
+    vec2 p1,
+    sampler2D field_fft,
+    int size,
+    float wavelength)
+  {
+    vec2 center = (p0 + p1) * 0.5f;
+
+    PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, size, wavelength);
+    Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, 0), 0).xy;
+    ComplexVec delta0 = ComplexVecFromReIm(-center, Complex(0.0f));
+
+    Complex phase_shift = Exp(MulI(ComplexDot(delta0, planar_wave.wave_vec)));
+
+    PlanarWave res_wave;
+    res_wave.wave_vec = planar_wave.wave_vec;
+    res_wave.phase_mult = Mul(contrib, Mul(planar_wave.phase_mult, phase_shift));
+    return res_wave;
+  }
+
   Complex ReconstructField(
     vec2 pos,
     vec2 p0,
@@ -128,11 +172,12 @@ void ExtractField(
       Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, 0), 0).xy;
       ComplexVec delta = ComplexVecFromReIm(pos - center, Complex(0.0f));
       Complex complex_phase = MulI(ComplexDot(delta, planar_wave.wave_vec));
-      if(simulate_evanescent_waves == 0)
+
+      /*if(simulate_evanescent_waves == 0)
       {
         complex_phase.x = 0.0f;
       }
-      complex_phase.x = -abs(complex_phase.x); //should this be needed?
+      complex_phase.x = -abs(complex_phase.x); //should this be needed?*/
       contrib = Mul(contrib, Exp(complex_phase));
       contrib = Mul(contrib, planar_wave.phase_mult);
       if(simulate_wave_occlusion != 0)
@@ -141,6 +186,82 @@ void ExtractField(
     }
     return res;
   }
+
+  Complex ReconstructField2(
+    vec2 pos,
+    vec2 p0,
+    vec2 p1,
+    sampler2D field_fft,
+    int size,
+    int simulate_evanescent_waves,
+    int simulate_wave_occlusion,
+    float wavelength)
+  {
+    vec2 center = (p0 + p1) * 0.5f;
+
+    float ratio = dot(pos - p0, p1 - p0) / dot(p1 - p0, p1 - p0);
+    int j = int(ratio * float(size));
+    Complex res = Complex(0.0f);
+    for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
+    {
+      PlanarWave ref_wave = GetReferenceWave(
+        harmonic_idx,
+        p0,
+        p1,
+        field_fft,
+        size,
+        wavelength);
+
+      ComplexVec delta = ComplexVecFromReIm(pos, Complex(0.0f));
+      Complex complex_phase = Exp(MulI(ComplexDot(delta, ref_wave.wave_vec)));
+
+      res += Mul(complex_phase, ref_wave.phase_mult);
+    }
+    return res;
+  }
+  Complex ReconstructRefField(
+    vec2 pos,
+    sampler2D ref_field_fft,
+    int scene_size,
+    int field_size,
+    float wavelength)
+  {
+    vec2 p0 = vec2(0.0f);
+    vec2 p1 = vec2(float(scene_size), 0.0f);
+
+    Complex res = Complex(0.0f);
+    for(int harmonic_idx = 0; harmonic_idx < int(field_size); harmonic_idx++)
+    {
+      PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, field_size, wavelength);
+      Complex contrib = texelFetch(ref_field_fft, ivec2(harmonic_idx, 0), 0).xy;
+      ComplexVec delta = ComplexVecFromReIm(pos, Complex(0.0f));
+      Complex complex_phase = MulI(ComplexDot(delta, planar_wave.wave_vec));
+
+      contrib = Mul(contrib, Exp(complex_phase));
+      res += contrib;
+    }
+    return res; 
+  }
+}}
+
+[include: "scene", "planar_waves"]
+[blendmode: additive]
+void CaptureReferenceWave(
+  vec2 field_p0,
+  vec2 field_p1,
+  sampler2D field_fft_tex,
+  int field_size,
+  out vec4 color)
+{{
+  int harmonic_idx = int(gl_FragCoord.x);
+  PlanarWave ref_wave = GetReferenceWave(
+    harmonic_idx,
+    field_p0,
+    field_p1,
+    field_fft_tex,
+    field_size,
+    wavelength);
+  color = vec4(ref_wave.phase_mult, 0.0f, 0.0f);
 }}
 
 [include: "scene", "planar_waves"]
@@ -162,8 +283,7 @@ void FinalGatheringShader(
   vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
   if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
   {
-    color = texture(field_tex, uv);
-    color = vec4(ReconstructField(gl_FragCoord.xy, field_p0, field_p1, field_tex, field_size, simulate_evanescent_waves, simulate_wave_occlusion, wavelength), 0.0f, 1.0f);
+    color = vec4(field_val - ReconstructRefField(gl_FragCoord.xy, field_tex, int(scene_size.x), field_size, wavelength), 0.0f, 1.0f);
   }
 }}
 
@@ -176,22 +296,39 @@ void RenderGraphMain()
     uvec2 size = GetSwapchainImage().GetSize();
     ClearShader(GetSwapchainImage());
 
-    vec2 field_p0 = vec2(100, 100);
-    vec2 field_p1 = vec2(500, 100);
     uvec2 field_res = uvec2(SliderInt("DFT resolution", 16, 1024, 256), 1);
-    Image field_img = GetImage(field_res, rgba32f);
-    ExtractField(size, field_res, field_p0, field_p1, field_img);
+    Image ref_black_fft = GetImage(field_res, rgba32f);
+    Image ref_field_fft0 = GetImage(field_res, rgba32f);
+    Image ref_field_fft1 = GetImage(field_res, rgba32f);
 
-    Image field_img_fft = GetImage(field_res, rgba32f);
-    DFT1(field_img, field_res, 1, field_img_fft);
+    vec2 field0_p0 = vec2(0, 150);
+    vec2 field0_p1 = vec2(size.x, 150);
+    {
+      Image field_img = GetImage(field_res, rgba32f);
+      ExtractField(size, field_res, field0_p0, field0_p1, ref_black_fft, 0, field_img);
 
-    //Image field_img_test = GetImage(field_res, rgba32f);
-    //DFT1(field_img_fft, field_res, 0, field_img_test);
+      Image field_img_fft = GetImage(field_res, rgba32f);
+      DFT1(field_img, field_res, 1, field_img_fft);
+
+      CaptureReferenceWave(field0_p0, field0_p1, field_img_fft, field_res.x, ref_field_fft0);
+    }
+    vec2 field1_p0 = vec2(0, 100);
+    vec2 field1_p1 = vec2(size.x, 100);
+    {
+      Image field_img = GetImage(field_res, rgba32f);
+      ExtractField(size, field_res, field1_p0, field1_p1, ref_field_fft0, 1, field_img);
+
+      Image field_img_fft = GetImage(field_res, rgba32f);
+      DFT1(field_img, field_res, 1, field_img_fft);
+
+      CaptureReferenceWave(field1_p0, field1_p1, field_img_fft, field_res.x, ref_field_fft1);
+    }
+
     FinalGatheringShader(
       size,
-      field_p0,
-      field_p1,
-      field_img_fft,
+      field1_p0,
+      field1_p1,
+      ref_field_fft1,
       field_res.x,
       SliderFloat("Reconstruction zone size", 0.0f, 500.0f, 100.0f),
       SliderInt("Simulate evanescent waves", 0, 1, 1),
