@@ -28,7 +28,7 @@ void OverlayTexShader(
 [include: "pcg", "complex", "bessel"]
 [declaration: "scene"]
 {{
-  float wavelength = 10.0f;
+  float wavelength = 2.0f;
   Complex GetSceneField(uvec2 scene_size, vec2 pos)
   {
     vec2 center_pos = vec2(scene_size) / 2.0f;
@@ -36,6 +36,11 @@ void OverlayTexShader(
     float phase = l / wavelength * 2.0f * pi;
     return Complex(bessj0(phase), bessy0(phase));
   }
+}}
+
+void ClearField(out vec4 color)
+{{
+  color = vec4(0.0f);
 }}
 
 [include: "scene", "planar_waves"]
@@ -304,6 +309,7 @@ void RenderGraphMain()
     vec2 field0_p0 = vec2(0, 150);
     vec2 field0_p1 = vec2(size.x, 150);
     {
+      ClearField(ref_field_fft0);
       Image field_img = GetImage(field_res, rgba32f);
       ExtractField(size, field_res, field0_p0, field0_p1, ref_black_fft, 0, field_img);
 
@@ -315,20 +321,21 @@ void RenderGraphMain()
     vec2 field1_p0 = vec2(0, 100);
     vec2 field1_p1 = vec2(size.x, 100);
     {
+      ClearField(ref_field_fft1);
       Image field_img = GetImage(field_res, rgba32f);
       ExtractField(size, field_res, field1_p0, field1_p1, ref_field_fft0, 1, field_img);
 
       Image field_img_fft = GetImage(field_res, rgba32f);
       DFT1(field_img, field_res, 1, field_img_fft);
 
-      CaptureReferenceWave(field1_p0, field1_p1, field_img_fft, field_res.x, ref_field_fft1);
+      CaptureReferenceWave(field1_p0, field1_p1, field_img_fft, field_res.x, ref_field_fft0);
     }
 
     FinalGatheringShader(
       size,
       field1_p0,
       field1_p1,
-      ref_field_fft1,
+      ref_field_fft0,
       field_res.x,
       SliderFloat("Reconstruction zone size", 0.0f, 500.0f, 100.0f),
       SliderInt("Simulate evanescent waves", 0, 1, 1),
