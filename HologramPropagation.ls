@@ -291,6 +291,7 @@ void FinalGatheringShader(
   ivec2 nearest_point_idx = ivec2(floor(point_idx2f));
 
   color = vec4(hash3i3f(ivec3(nearest_point_idx, 0)), 1.0f);
+  color = vec4(texelFetch(field_img, nearest_point_idx, 0));
 }}
 
 [rendergraph]
@@ -307,15 +308,20 @@ void RenderGraphMain()
       SliderInt("Lines count", 1, 128, 2));
 
     Image curr_field_img = GetImage(field_size, rgba32f);
-    Image ref_field_fft0 = GetImage(field_size, rgba32f);
-    Image ref_field_fft1 = GetImage(field_size, rgba32f);
+    Image curr_field_fft = GetImage(field_size, rgba32f);
 
     ExtractField(scene_size, field_size, curr_field_img);
+
+    DFT1(
+      curr_field_img,
+      field_size,
+      1,
+      curr_field_fft);
 
     FinalGatheringShader(
       scene_size,
       field_size,
-      curr_field_img,
+      curr_field_fft,
       GetSwapchainImage());
 
 
