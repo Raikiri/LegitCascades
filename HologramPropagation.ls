@@ -28,8 +28,7 @@ void OverlayTexShader(
 [include: "pcg", "complex", "bessel"]
 [declaration: "scene"]
 {{
-  float wavelength = 5.0f;
-  Complex GetSceneField(uvec2 scene_size, vec2 pos, int seed)
+  Complex GetSceneField(uvec2 scene_size, vec2 pos, float wavelength, int seed)
   {
     vec2 center_pos = vec2(scene_size) / 2.0f;
     vec2 p0 = vec2(center_pos.x - 100.0f, -20.0f);
@@ -174,6 +173,7 @@ void PropagateField(
   uvec2 field_size,
   sampler2D in_field_fft,
   int frame_idx,
+  float wavelength,
   out vec4 out_field_color)
 {{
   ivec2 point_idx = ivec2(gl_FragCoord.xy);
@@ -181,7 +181,7 @@ void PropagateField(
   int prev_line_idx = point_idx.y - 1;
   if(point_idx.y == 0)
   {
-    out_field_color = vec4(GetSceneField(scene_size, point_pos, frame_idx), 0.0f, 1.0f);
+    out_field_color = vec4(GetSceneField(scene_size, point_pos, wavelength, frame_idx), 0.0f, 1.0f);
   }else
   {
     Complex res_field = ReconstructField(
@@ -222,10 +222,11 @@ void AccumulationShader(
   uvec2 scene_size,
   uvec2 field_size,
   sampler2D curr_field_fft,
+  float wavelength,
   int frame_idx,
   out vec4 color)
 {{
-  Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy, frame_idx);
+  Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy, wavelength, frame_idx);
 
   vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
   int line_idx = int(floor(point_idx2f.y));
@@ -258,9 +259,10 @@ void FinalGatheringShader(
   uvec2 scene_size,
   uvec2 field_size,
   sampler2D curr_field_fft,
+  float wavelength,
   out vec4 color)
 {{
-  Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy, 0);
+  Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy, wavelength, 0);
 
   vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
   int line_idx = int(floor(point_idx2f.y));
@@ -319,7 +321,7 @@ void RenderGraphMain()
     uvec2 field_size = uvec2(
       SliderInt("DFT resolution", 16, 2048, 1024),
       SliderInt("Lines count", 1, 256, 8));
-
+    float wavelength = SliderFloat("Wavelength", 0.1f, 10.0f, 2.0f);
     int frame_idx = ContextInt("frame_idx");
     if(SliderInt("Randomize phases", 0, 1, 1) == 1)
       ContextInt("frame_idx")++;
@@ -337,7 +339,7 @@ void RenderGraphMain()
       1,
       curr_field_fft);
 
-    PropagateField(scene_size, field_size, curr_field_fft, frame_idx, curr_field_img);
+    PropagateField(scene_size, field_size, curr_field_fft, frame_idx, wavelength, curr_field_img);
 
     DFT1(
       curr_field_img,
@@ -353,6 +355,7 @@ void RenderGraphMain()
       scene_size,
       field_size,
       curr_field_fft,
+      wavelength,
       frame_idx,
       accum_img);
 
