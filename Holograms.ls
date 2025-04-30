@@ -28,11 +28,11 @@ void OverlayTexShader(
 [include: "pcg", "complex", "bessel"]
 [declaration: "scene"]
 {{
-  float wavelength = 2.0f;
+  float wavelength = 0.5f;
   Complex GetSceneField(uvec2 scene_size, vec2 pos)
   {
     vec2 center_pos = vec2(scene_size) / 2.0f;
-    float l = length(pos - center_pos);
+    float l = length(pos - center_pos + vec2(0.0f, -200.0f));
     float phase = l / wavelength * 2.0f * pi;
     return Complex(bessj0(phase), bessy0(phase));
   }
@@ -62,12 +62,12 @@ void ExtractField(
   color = vec4(0.0f);
   if(slice_idx == 0)
   {
-    if(ratio.x > 0.25f && ratio.x < 0.55f)
-      color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+    /*if(ratio.x > 0.35f && ratio.x < 0.6f)
+      color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);*/
   }
   if(slice_idx == 1)
   {
-    if(ratio.x > 0.15f && ratio.x < 0.25f || ratio.x > 0.6f && ratio.x < 0.9f)
+    if(ratio.x > 0.35f && ratio.x < 0.45f || ratio.x > 0.5f && ratio.x < 0.7f)
       color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
   }
 }}
@@ -284,12 +284,13 @@ void FinalGatheringShader(
   Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
   color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 
-  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -reconstructed_size), field_p1 + vec2(reconstructed_size, reconstructed_size));
+  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -reconstructed_size), field_p1 + vec2(reconstructed_size, reconstructed_size*0.0f));
   vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
   if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
   {
     color = vec4(field_val - ReconstructRefField(gl_FragCoord.xy, field_tex, int(scene_size.x), field_size, wavelength), 0.0f, 1.0f);
   }
+  color = vec4(length(color.rg));
 }}
 
 [rendergraph]
@@ -301,13 +302,13 @@ void RenderGraphMain()
     uvec2 size = GetSwapchainImage().GetSize();
     ClearShader(GetSwapchainImage());
 
-    uvec2 field_res = uvec2(SliderInt("DFT resolution", 16, 1024, 256), 1);
+    uvec2 field_res = uvec2(SliderInt("DFT resolution", 16, 4048, 256), 1);
     Image ref_black_fft = GetImage(field_res, rgba32f);
     Image ref_field_fft0 = GetImage(field_res, rgba32f);
     Image ref_field_fft1 = GetImage(field_res, rgba32f);
 
-    vec2 field0_p0 = vec2(0, 150);
-    vec2 field0_p1 = vec2(size.x, 150);
+    vec2 field0_p0 = vec2(0, 200);
+    vec2 field0_p1 = vec2(size.x, 200);
     {
       ClearField(ref_field_fft0);
       Image field_img = GetImage(field_res, rgba32f);
@@ -318,8 +319,8 @@ void RenderGraphMain()
 
       CaptureReferenceWave(field0_p0, field0_p1, field_img_fft, field_res.x, ref_field_fft0);
     }
-    vec2 field1_p0 = vec2(0, 100);
-    vec2 field1_p1 = vec2(size.x, 100);
+    vec2 field1_p0 = vec2(0, 200);
+    vec2 field1_p1 = vec2(size.x, 200);
     {
       ClearField(ref_field_fft1);
       Image field_img = GetImage(field_res, rgba32f);
