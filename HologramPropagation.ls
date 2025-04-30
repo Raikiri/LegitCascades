@@ -28,13 +28,26 @@ void OverlayTexShader(
 [include: "pcg", "complex", "bessel"]
 [declaration: "scene"]
 {{
-  float wavelength = 1.5f;
+  float wavelength = 1.0f;
   Complex GetSceneField(uvec2 scene_size, vec2 pos)
   {
     vec2 center_pos = vec2(scene_size) / 2.0f;
-    float l = length(pos - vec2(center_pos.x, 0.0f) + vec2(0.0f, 10.0f));
-    float phase = l / wavelength * 2.0f * pi;
-    return Complex(bessj0(phase), bessy0(phase));
+    vec2 p0 = vec2(center_pos.x - 300.0f, -20.0f);
+    vec2 p1 = vec2(center_pos.x + 300.0f, -20.0f);
+
+    Complex res = Complex(0.0f);
+    uint count = 1000u;
+    for(uint i = 0u; i < count; i++)
+    {
+      float ratio = (float(i) + 0.5f) / float(count);
+      vec2 charge_pos = mix(p0, p1, ratio);
+      float l = length(pos - charge_pos);
+      float phase = l / wavelength * 2.0f * pi;
+      vec3 sample_hash = hash3i3f(ivec3(i, 0, 0));
+      phase += 2.0f * pi * sample_hash.x;
+      res += Complex(bessj0(phase), bessy0(phase)) / float(count) * 100.0f;
+    }
+    return res;
   }
 }}
 
