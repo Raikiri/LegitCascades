@@ -136,34 +136,6 @@ void ExtractField(
     return res;
   }
 
-  float IsRightQuadrant(ComplexVec wave_vec)
-  {
-    vec2 real_dir = (vec2(wave_vec.x.x, wave_vec.y.x));
-    //return 1.0f;
-    return (abs(real_dir.x) < abs(real_dir.y)) ? 1.0f : 0.0f;
-  }
-
-  PlanarWave GetReferenceWave(
-    int harmonic_idx,
-    vec2 p0,
-    vec2 p1,
-    sampler2D field_fft,
-    int size,
-    float wavelength)
-  {
-    vec2 center = (p0 + p1) * 0.5f;
-
-    PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, size, wavelength);
-    Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, 0), 0).xy;
-    ComplexVec delta0 = ComplexVecFromReIm(-center, Complex(0.0f));
-
-    Complex phase_shift = Exp(MulI(ComplexDot(delta0, planar_wave.wave_vec)));
-
-    PlanarWave res_wave;
-    res_wave.wave_vec = planar_wave.wave_vec;
-    res_wave.phase_mult = Mul(contrib, Mul(planar_wave.phase_mult, phase_shift));
-    return res_wave;
-  }
 
   Complex ReconstructField(
     vec2 pos,
@@ -198,26 +170,6 @@ void ExtractField(
     }
     return res;
   }
-}}
-
-[include: "scene", "planar_waves"]
-[blendmode: additive]
-void CaptureReferenceWave(
-  vec2 field_p0,
-  vec2 field_p1,
-  sampler2D field_fft_tex,
-  int field_size,
-  out vec4 color)
-{{
-  int harmonic_idx = int(gl_FragCoord.x);
-  PlanarWave ref_wave = GetReferenceWave(
-    harmonic_idx,
-    field_p0,
-    field_p1,
-    field_fft_tex,
-    field_size,
-    wavelength);
-  color = vec4(ref_wave.phase_mult, 0.0f, 0.0f);
 }}
 
 
