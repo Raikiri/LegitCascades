@@ -28,12 +28,12 @@ void OverlayTexShader(
 [include: "pcg", "complex", "bessel"]
 [declaration: "scene"]
 {{
-  float wavelength = 1.0f;
-  Complex GetSceneField(uvec2 scene_size, vec2 pos)
+  float wavelength = 5.0f;
+  Complex GetSceneField(uvec2 scene_size, vec2 pos, int seed)
   {
     vec2 center_pos = vec2(scene_size) / 2.0f;
-    vec2 p0 = vec2(center_pos.x - 300.0f, -20.0f);
-    vec2 p1 = vec2(center_pos.x + 300.0f, -20.0f);
+    vec2 p0 = vec2(center_pos.x - 100.0f, -20.0f);
+    vec2 p1 = vec2(center_pos.x + 100.0f, -20.0f);
 
     Complex res = Complex(0.0f);
     uint count = 1000u;
@@ -43,7 +43,7 @@ void OverlayTexShader(
       vec2 charge_pos = mix(p0, p1, ratio);
       float l = length(pos - charge_pos);
       float phase = l / wavelength * 2.0f * pi;
-      vec3 sample_hash = hash3i3f(ivec3(i, 0, 0));
+      vec3 sample_hash = hash3i3f(ivec3(i, seed, 0));
       phase += 2.0f * pi * sample_hash.x;
       res += Complex(bessj0(phase), bessy0(phase)) / float(count) * 100.0f;
     }
@@ -66,24 +66,6 @@ void OverlayTexShader(
 void ClearField(out vec4 color)
 {{
   color = vec4(0.0f);
-}}
-
-[include: "scene", "planar_waves", "line_grid"]
-void ExtractField(
-  uvec2 scene_size,
-  uvec2 field_size,
-  out vec4 color)
-{{
-  uvec2 point_idx = uvec2(gl_FragCoord.xy);
-  vec2 point_pos = GetGridPointPos(scene_size, field_size, vec2(point_idx));
-  
-  Complex field_val = Complex(0.0f);
-  if(point_idx.y == 0u)
-  {
-    field_val = GetSceneField(scene_size, point_pos);
-  }
-
-  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 }}
 
 [include: "complex", "bessel"]
@@ -191,6 +173,7 @@ void PropagateField(
   uvec2 scene_size,
   uvec2 field_size,
   sampler2D in_field_fft,
+  int frame_idx,
   out vec4 out_field_color)
 {{
   ivec2 point_idx = ivec2(gl_FragCoord.xy);
@@ -198,7 +181,7 @@ void PropagateField(
   int prev_line_idx = point_idx.y - 1;
   if(point_idx.y == 0)
   {
-    out_field_color = vec4(GetSceneField(scene_size, point_pos), 0.0f, 1.0f);
+    out_field_color = vec4(GetSceneField(scene_size, point_pos, frame_idx), 0.0f, 1.0f);
   }else
   {
     Complex res_field = ReconstructField(
@@ -234,13 +217,50 @@ void PropagateField(
 }}
 
 [include: "scene", "planar_waves", "line_grid"]
+[blendmode: additive]
+void AccumulationShader(
+  uvec2 scene_size,
+  uvec2 field_size,
+  sampler2D curr_field_fft,
+  int frame_idx,
+  out vec4 color)
+{{
+  Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy, frame_idx);
+
+  vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
+  int line_idx = int(floor(point_idx2f.y));
+
+  Complex res_field = ReconstructField(
+    gl_FragCoord.xy,
+    GetGridPointPos(scene_size, field_size, vec2(0.0f, line_idx)),
+    GetGridPointPos(scene_size, field_size, vec2(float(field_size.x), line_idx)),
+    curr_field_fft,
+    int(field_size.x),
+    line_idx,
+    1,
+    1,
+    wavelength);
+  //color = vec4(res_field, 0.0f, 1.0f);
+  color = vec4(length(res_field), 0.0f, 0.0f, 1.0f);
+  //color = vec4(ref_field, 0.0f, 1.0f);
+
+
+  //color += vec4(hash3i3f(ivec3(line_idx, 0, 0)) * 0.01f, 1.0f);
+  //if(line_idx != 0) color *= 0.0f;
+  //color = vec4(texelFetch(field_img, ivec2(point_idx2f + vec2(0.5f)), 0));
+
+  //Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
+  //color = vec4(ref_field, 0.0f, 1.0f);
+}}
+
+[include: "scene", "planar_waves", "line_grid"]
 void FinalGatheringShader(
   uvec2 scene_size,
   uvec2 field_size,
   sampler2D curr_field_fft,
   out vec4 color)
 {{
-  Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy);
+  Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy, 0);
 
   vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
   int line_idx = int(floor(point_idx2f.y));
@@ -268,7 +288,25 @@ void FinalGatheringShader(
   //color = vec4(ref_field, 0.0f, 1.0f);
 }}
 
+[include: "complex"]
+void AccumGatheringShader(
+  sampler2D accum_img,
+  out vec4 color)
+{{
+  vec4 accum_sample = texelFetch(accum_img, ivec2(gl_FragCoord.xy), 0);
+  Complex res_field = Complex(accum_sample.rg) / accum_sample.a;
+  color = vec4(res_field, 0.0f, 1.0f);
+  color = vec4(length(res_field));
+  //color = vec4(ref_field, 0.0f, 1.0f);
 
+
+  //color += vec4(hash3i3f(ivec3(line_idx, 0, 0)) * 0.01f, 1.0f);
+  //if(line_idx != 0) color *= 0.0f;
+  //color = vec4(texelFetch(field_img, ivec2(point_idx2f + vec2(0.5f)), 0));
+
+  //Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
+  //color = vec4(ref_field, 0.0f, 1.0f);
+}}
 
 [rendergraph]
 [include: "fps"]
@@ -278,13 +316,17 @@ void RenderGraphMain()
   {
     uvec2 scene_size = GetSwapchainImage().GetSize();
     ClearShader(GetSwapchainImage());
-
     uvec2 field_size = uvec2(
-      SliderInt("DFT resolution", 16, 2048, 2048),
+      SliderInt("DFT resolution", 16, 2048, 1024),
       SliderInt("Lines count", 1, 256, 8));
+
+    int frame_idx = ContextInt("frame_idx");
+    if(SliderInt("Randomize phases", 0, 1, 1) == 1)
+      ContextInt("frame_idx")++;
 
     Image curr_field_img = GetImage(field_size, rgba32f);
     Image curr_field_fft = GetImage(field_size, rgba32f);
+    Image accum_img = GetImage(scene_size, rgba32f);
 
     //if(SliderInt("Init", 0, 1, 1) == 1)
     //  ExtractField(scene_size, field_size, curr_field_img);
@@ -295,7 +337,7 @@ void RenderGraphMain()
       1,
       curr_field_fft);
 
-    PropagateField(scene_size, field_size, curr_field_fft, curr_field_img);
+    PropagateField(scene_size, field_size, curr_field_fft, frame_idx, curr_field_img);
 
     DFT1(
       curr_field_img,
@@ -303,11 +345,26 @@ void RenderGraphMain()
       1,
       curr_field_fft);
 
-    FinalGatheringShader(
+    if(SliderInt("Clear", 0, 1, 0) == 1)
+      ClearShader(accum_img);
+
+
+    AccumulationShader(
       scene_size,
       field_size,
       curr_field_fft,
+      frame_idx,
+      accum_img);
+
+    AccumGatheringShader(
+      accum_img,
       GetSwapchainImage());
+
+    /*FinalGatheringShader(
+      scene_size,
+      field_size,
+      curr_field_fft,
+      );*/
 
 
     //OverlayTexShader(
@@ -320,7 +377,7 @@ void RenderGraphMain()
 
 void ClearShader(out vec4 col)
 {{
-  col = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+  col = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 }}
 
 void CopyShader(sampler2D tex, out vec4 col)
