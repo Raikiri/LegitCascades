@@ -32,7 +32,7 @@ void OverlayTexShader(
   Complex GetSceneField(uvec2 scene_size, vec2 pos)
   {
     vec2 center_pos = vec2(scene_size) / 2.0f;
-    float l = length(pos - center_pos + vec2(0.0f, 100.0f));
+    float l = length(pos - vec2(center_pos.x, 0.0f) + vec2(0.0f, 0.0f));
     float phase = l / wavelength * 2.0f * pi;
     return Complex(bessj0(phase), bessy0(phase));
   }
@@ -94,7 +94,7 @@ void ExtractField(
   PlanarWave GetPlanarWaveFromHarmonic(vec2 p0, vec2 p1, int harmonic_idx, int size, float wavelength)
   {
     vec2 dir = normalize(p1 - p0);
-    vec2 tangent = -vec2(-dir.y, dir.x);
+    vec2 tangent = vec2(-dir.y, dir.x);
     float l = length(p0 - p1);
 
     int shifted_idx = ShiftIndex(harmonic_idx, size);
@@ -177,7 +177,6 @@ void ExtractField(
     float wavelength)
   {
     vec2 center = (p0 + p1) * 0.5f;
-
     Complex res = Complex(0.0f);
     for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
     {
@@ -225,15 +224,34 @@ void CaptureReferenceWave(
 void FinalGatheringShader(
   uvec2 scene_size,
   uvec2 field_size,
-  sampler2D field_img,
+  sampler2D curr_field_fft,
   out vec4 color)
 {{
-  Complex ref_field_val = GetSceneField(scene_size, gl_FragCoord.xy);
-  vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
-  ivec2 nearest_point_idx = ivec2(floor(point_idx2f + vec2(0.5f)));
+  Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy);
 
-  color = vec4(hash3i3f(ivec3(nearest_point_idx, 0)), 1.0f);
-  color = vec4(texelFetch(field_img, nearest_point_idx, 0));
+  vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
+  int line_idx = int(floor(point_idx2f.y + 0.5f));
+
+  Complex res_field = ReconstructField(
+    gl_FragCoord.xy,
+    GetGridPointPos(scene_size, field_size, vec2(0.0f, line_idx)),
+    GetGridPointPos(scene_size, field_size, vec2(float(field_size.x), line_idx)),
+    curr_field_fft,
+    int(field_size.x),
+    line_idx,
+    1,
+    1,
+    wavelength);
+  color = vec4(res_field, 0.0f, 1.0f);
+  //color = vec4(ref_field, 0.0f, 1.0f);
+
+
+  color += vec4(hash3i3f(ivec3(line_idx, 0, 0)) * 0.01f, 1.0f);
+  //if(line_idx != 0) color *= 0.0f;
+  //color = vec4(texelFetch(field_img, ivec2(point_idx2f + vec2(0.5f)), 0));
+
+  //Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
+  //color = vec4(ref_field, 0.0f, 1.0f);
 }}
 
 [include: "scene", "planar_waves", "line_grid"]
@@ -245,7 +263,6 @@ void PropagateField(
 {{
   ivec2 point_idx = ivec2(gl_FragCoord.xy);
   vec2 point_pos = GetGridPointPos(scene_size, field_size, vec2(point_idx));
-  
   int prev_line_idx = point_idx.y - 1;
   if(point_idx.y == 0)
   {
@@ -254,8 +271,8 @@ void PropagateField(
   {
     Complex res_field = ReconstructField(
       point_pos,
-      GetGridPointPos(scene_size, field_size, vec2(0.0f, point_idx.y)),
-      GetGridPointPos(scene_size, field_size, vec2(float(field_size.x), point_idx.y)),
+      GetGridPointPos(scene_size, field_size, vec2(0.0f, prev_line_idx)),
+      GetGridPointPos(scene_size, field_size, vec2(float(field_size.x), prev_line_idx)),
       in_field_fft,
       int(field_size.x),
       int(prev_line_idx),
@@ -286,7 +303,7 @@ void RenderGraphMain()
 
     uvec2 field_size = uvec2(
       SliderInt("DFT resolution", 16, 2048, 128),
-      SliderInt("Lines count", 1, 128, 2));
+      SliderInt("Lines count", 1, 256, 2));
 
     Image curr_field_img = GetImage(field_size, rgba32f);
     Image curr_field_fft = GetImage(field_size, rgba32f);
@@ -302,10 +319,16 @@ void RenderGraphMain()
 
     PropagateField(scene_size, field_size, curr_field_fft, curr_field_img);
 
+    DFT1(
+      curr_field_img,
+      field_size,
+      1,
+      curr_field_fft);
+
     FinalGatheringShader(
       scene_size,
       field_size,
-      curr_field_img,
+      curr_field_fft,
       GetSwapchainImage());
 
 
