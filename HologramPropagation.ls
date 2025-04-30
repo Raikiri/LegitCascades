@@ -230,7 +230,7 @@ void FinalGatheringShader(
 {{
   Complex ref_field_val = GetSceneField(scene_size, gl_FragCoord.xy);
   vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
-  ivec2 nearest_point_idx = ivec2(floor(point_idx2f));
+  ivec2 nearest_point_idx = ivec2(floor(point_idx2f + vec2(0.5f)));
 
   color = vec4(hash3i3f(ivec3(nearest_point_idx, 0)), 1.0f);
   color = vec4(texelFetch(field_img, nearest_point_idx, 0));
@@ -255,7 +255,7 @@ void PropagateField(
     Complex res_field = ReconstructField(
       point_pos,
       GetGridPointPos(scene_size, field_size, vec2(0.0f, point_idx.y)),
-      GetGridPointPos(scene_size, field_size, vec2(field_size.x - 1u, point_idx.y)),
+      GetGridPointPos(scene_size, field_size, vec2(float(field_size.x), point_idx.y)),
       in_field_fft,
       int(field_size.x),
       int(prev_line_idx),
