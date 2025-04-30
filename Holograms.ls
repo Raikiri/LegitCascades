@@ -302,7 +302,7 @@ void RenderGraphMain()
     uvec2 size = GetSwapchainImage().GetSize();
     ClearShader(GetSwapchainImage());
 
-    uvec2 field_res = uvec2(SliderInt("DFT resolution", 16, 4048, 256), 1);
+    uvec2 field_res = uvec2(SliderInt("DFT resolution", 16, 4096, 2048), 1);
     Image ref_black_fft = GetImage(field_res, rgba32f);
     Image ref_field_fft0 = GetImage(field_res, rgba32f);
     Image ref_field_fft1 = GetImage(field_res, rgba32f);
@@ -338,7 +338,7 @@ void RenderGraphMain()
       field1_p1,
       ref_field_fft0,
       field_res.x,
-      SliderFloat("Reconstruction zone size", 0.0f, 500.0f, 100.0f),
+      SliderFloat("Reconstruction zone size", 0.0f, 500.0f, 500.0f),
       SliderInt("Simulate evanescent waves", 0, 1, 1),
       SliderInt("Simulate wave occlusion", 0, 1, 1),
       GetSwapchainImage());
