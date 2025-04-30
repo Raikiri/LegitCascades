@@ -249,7 +249,7 @@ void PropagateField(
   int prev_line_idx = point_idx.y - 1;
   if(point_idx.y == 0)
   {
-    out_field_color = vec4(GetSceneField(scene_size, gl_FragCoord.xy), 0.0f, 1.0f);
+    out_field_color = vec4(GetSceneField(scene_size, point_pos), 0.0f, 1.0f);
   }else
   {
     Complex res_field = ReconstructField(
@@ -264,13 +264,13 @@ void PropagateField(
       wavelength);
     out_field_color = vec4(res_field, 0.0f, 1.0f);
   }
-/*  Complex field_val = Complex(0.0f);
-  if(point_idx.y == 0u)
+  /*Complex field_val = Complex(0.0f);
+  if(point_idx.y == 0)
   {
     field_val = GetSceneField(scene_size, point_pos);
   }
 
-  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);*/
+  out_field_color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);*/
   //out_field_color = vec4(0.5f);
 }}
 
