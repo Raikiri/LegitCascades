@@ -177,8 +177,6 @@ void ExtractField(
   {
     vec2 center = (p0 + p1) * 0.5f;
 
-    float ratio = dot(pos - p0, p1 - p0) / dot(p1 - p0, p1 - p0);
-    int j = int(ratio * float(size));
     Complex res = Complex(0.0f);
     for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
     {
@@ -294,6 +292,35 @@ void FinalGatheringShader(
   color = vec4(texelFetch(field_img, nearest_point_idx, 0));
 }}
 
+[include: "scene", "planar_waves", "line_grid"]
+void PropagateField(
+  uvec2 scene_size,
+  uvec2 field_size,
+  sampler2D in_field_fft,
+  out vec4 out_field_color)
+{{
+  ivec2 point_idx = ivec2(gl_FragCoord.xy);
+  vec2 point_pos = GetGridPointPos(scene_size, field_size, vec2(point_idx));
+  
+  int prev_line_idx = point_idx.y - 1;
+  if(point_idx.y == 0)
+  {
+    out_field_color = vec4(GetSceneField(scene_size, gl_FragCoord.xy), 0.0f, 1.0f);
+  }else
+  {
+    out_field_color = texelFetch(in_field_fft, ivec2(point_idx.x, prev_line_idx), 0);
+  }
+/*  Complex field_val = Complex(0.0f);
+  if(point_idx.y == 0u)
+  {
+    field_val = GetSceneField(scene_size, point_pos);
+  }
+
+  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);*/
+  //out_field_color = vec4(0.5f);
+}}
+
+
 [rendergraph]
 [include: "fps"]
 void RenderGraphMain()
@@ -310,7 +337,8 @@ void RenderGraphMain()
     Image curr_field_img = GetImage(field_size, rgba32f);
     Image curr_field_fft = GetImage(field_size, rgba32f);
 
-    ExtractField(scene_size, field_size, curr_field_img);
+    if(SliderInt("Init", 0, 1, 1) == 1)
+      ExtractField(scene_size, field_size, curr_field_img);
 
     DFT1(
       curr_field_img,
@@ -318,10 +346,12 @@ void RenderGraphMain()
       1,
       curr_field_fft);
 
+    PropagateField(scene_size, field_size, curr_field_fft, curr_field_img);
+
     FinalGatheringShader(
       scene_size,
       field_size,
-      curr_field_fft,
+      curr_field_img,
       GetSwapchainImage());
 
 
