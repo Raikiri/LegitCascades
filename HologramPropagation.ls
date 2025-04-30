@@ -38,38 +38,39 @@ void OverlayTexShader(
   }
 }}
 
+[declaration: "line_grid"]
+{{
+  vec2 GetGridPointPos(uvec2 scene_size, uvec2 field_size, vec2 point_idx)
+  {
+    return (point_idx + vec2(0.5f)) / vec2(field_size) * vec2(scene_size);
+  }
+  vec2 GetGridPointIdx(uvec2 scene_size, uvec2 field_size, vec2 point_pos)
+  {
+    return point_pos / vec2(scene_size) * vec2(field_size) - vec2(0.5f);
+  }
+}}
+
 void ClearField(out vec4 color)
 {{
   color = vec4(0.0f);
 }}
 
-[include: "scene", "planar_waves"]
+[include: "scene", "planar_waves", "line_grid"]
 void ExtractField(
   uvec2 scene_size,
   uvec2 field_size,
-  vec2 field_p0,
-  vec2 field_p1,
-  sampler2D ref_field_fft,
-  int slice_idx,
   out vec4 color)
 {{
-  vec2 ratio = floor(gl_FragCoord.xy) / vec2(field_size);
-  vec2 pos = mix(field_p0, field_p1, ratio.x);
-  Complex field_val = GetSceneField(scene_size, pos);
-
-  field_val -= ReconstructRefField(pos, ref_field_fft, int(scene_size.x), int(field_size.x), wavelength);
-
-  color = vec4(0.0f);
-  if(slice_idx == 0)
+  uvec2 point_idx = uvec2(gl_FragCoord.xy);
+  vec2 point_pos = GetGridPointPos(scene_size, field_size, vec2(point_idx));
+  
+  Complex field_val = Complex(0.0f);
+  if(point_idx.y == 0u)
   {
-    /*if(ratio.x > 0.35f && ratio.x < 0.6f)
-      color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);*/
+    field_val = GetSceneField(scene_size, point_pos);
   }
-  if(slice_idx == 1)
-  {
-    if(ratio.x > 0.35f && ratio.x < 0.45f || ratio.x > 0.5f && ratio.x < 0.7f)
-      color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
-  }
+
+  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
 }}
 
 [include: "complex", "bessel"]
@@ -278,28 +279,18 @@ void CaptureReferenceWave(
   color = vec4(ref_wave.phase_mult, 0.0f, 0.0f);
 }}
 
-[include: "scene", "planar_waves"]
+[include: "scene", "planar_waves", "line_grid"]
 void FinalGatheringShader(
   uvec2 scene_size,
-  vec2 field_p0,
-  vec2 field_p1,
-  sampler2D field_tex,
-  int field_size,
-  float reconstructed_size,
-  int simulate_evanescent_waves,
-  int simulate_wave_occlusion,
+  uvec2 field_size,
+  sampler2D field_img,
   out vec4 color)
 {{
-  Complex field_val = GetSceneField(scene_size, gl_FragCoord.xy);
-  color = vec4(field_val.x, field_val.y, 0.0f, 1.0f);
+  Complex ref_field_val = GetSceneField(scene_size, gl_FragCoord.xy);
+  vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
+  ivec2 nearest_point_idx = ivec2(floor(point_idx2f));
 
-  vec4 field_aabb = vec4(field_p0 + vec2(-reconstructed_size, -reconstructed_size), field_p1 + vec2(reconstructed_size, reconstructed_size*0.0f));
-  vec2 uv = (gl_FragCoord.xy - field_aabb.xy) / (field_aabb.zw - field_aabb.xy);
-  if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
-  {
-    color = vec4(field_val - ReconstructRefField(gl_FragCoord.xy, field_tex, int(scene_size.x), field_size, wavelength), 0.0f, 1.0f);
-  }
-  color = vec4(length(color.rg));
+  color = vec4(hash3i3f(ivec3(nearest_point_idx, 0)), 1.0f);
 }}
 
 [rendergraph]
@@ -308,51 +299,23 @@ void RenderGraphMain()
 {{
   if(Checkbox("Run"))
   {
-    uvec2 size = GetSwapchainImage().GetSize();
+    uvec2 scene_size = GetSwapchainImage().GetSize();
     ClearShader(GetSwapchainImage());
 
     uvec2 field_size = uvec2(
       SliderInt("DFT resolution", 16, 2048, 128),
       SliderInt("Lines count", 1, 128, 2));
 
-    Image ref_black_fft = GetImage(field_size, rgba32f);
+    Image curr_field_img = GetImage(field_size, rgba32f);
     Image ref_field_fft0 = GetImage(field_size, rgba32f);
     Image ref_field_fft1 = GetImage(field_size, rgba32f);
 
-    vec2 field0_p0 = vec2(0, 200);
-    vec2 field0_p1 = vec2(size.x, 200);
-    {
-      ClearField(ref_field_fft0);
-      Image field_img = GetImage(field_size, rgba32f);
-      ExtractField(size, field_size, field0_p0, field0_p1, ref_black_fft, 0, field_img);
-
-      Image field_img_fft = GetImage(field_size, rgba32f);
-      DFT1(field_img, field_size, 1, field_img_fft);
-
-      CaptureReferenceWave(field0_p0, field0_p1, field_img_fft, field_size.x, ref_field_fft0);
-    }
-    vec2 field1_p0 = vec2(0, 200);
-    vec2 field1_p1 = vec2(size.x, 200);
-    {
-      ClearField(ref_field_fft1);
-      Image field_img = GetImage(field_size, rgba32f);
-      ExtractField(size, field_size, field1_p0, field1_p1, ref_field_fft0, 1, field_img);
-
-      Image field_img_fft = GetImage(field_size, rgba32f);
-      DFT1(field_img, field_size, 1, field_img_fft);
-
-      CaptureReferenceWave(field1_p0, field1_p1, field_img_fft, field_size.x, ref_field_fft0);
-    }
+    ExtractField(scene_size, field_size, curr_field_img);
 
     FinalGatheringShader(
-      size,
-      field1_p0,
-      field1_p1,
-      ref_field_fft0,
-      field_size.x,
-      SliderFloat("Reconstruction zone size", 0.0f, 500.0f, 500.0f),
-      SliderInt("Simulate evanescent waves", 0, 1, 1),
-      SliderInt("Simulate wave occlusion", 0, 1, 1),
+      scene_size,
+      field_size,
+      curr_field_img,
       GetSwapchainImage());
 
 
