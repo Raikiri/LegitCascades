@@ -32,7 +32,7 @@ void OverlayTexShader(
   Complex GetSceneField(uvec2 scene_size, vec2 pos)
   {
     vec2 center_pos = vec2(scene_size) / 2.0f;
-    float l = length(pos - vec2(center_pos.x, 0.0f) + vec2(0.0f, 0.0f));
+    float l = length(pos - vec2(center_pos.x, 0.0f) + vec2(0.0f, 10.0f));
     float phase = l / wavelength * 2.0f * pi;
     return Complex(bessj0(phase), bessy0(phase));
   }
@@ -42,11 +42,11 @@ void OverlayTexShader(
 {{
   vec2 GetGridPointPos(uvec2 scene_size, uvec2 field_size, vec2 point_idx)
   {
-    return (point_idx + vec2(0.5f)) / vec2(field_size) * vec2(scene_size);
+    return (point_idx + vec2(0.5f, 0.0f)) / vec2(field_size) * vec2(scene_size);
   }
   vec2 GetGridPointIdx(uvec2 scene_size, uvec2 field_size, vec2 point_pos)
   {
-    return point_pos / vec2(scene_size) * vec2(field_size) - vec2(0.5f);
+    return point_pos / vec2(scene_size) * vec2(field_size) - vec2(0.5f, 0.0f);
   }
 }}
 
@@ -230,7 +230,7 @@ void FinalGatheringShader(
   Complex ref_field = GetSceneField(scene_size, gl_FragCoord.xy);
 
   vec2 point_idx2f = GetGridPointIdx(scene_size, field_size, gl_FragCoord.xy);
-  int line_idx = int(floor(point_idx2f.y + 0.5f));
+  int line_idx = int(floor(point_idx2f.y));
 
   Complex res_field = ReconstructField(
     gl_FragCoord.xy,
@@ -279,6 +279,13 @@ void PropagateField(
       1,
       1,
       wavelength);
+
+
+    vec3 line_hash = hash3i3f(ivec3(prev_line_idx, 3, 0));
+    float obstacle_size = 0.2f;
+    vec2 obstacle_interval = float(scene_size.x) * (vec2(line_hash.x * (1.0f - obstacle_size)) + vec2(0.0f, obstacle_size));
+    if(point_pos.x > obstacle_interval.x && point_pos.x < obstacle_interval.y)
+      res_field *= 0.0f;
     out_field_color = vec4(res_field, 0.0f, 1.0f);
   }
   /*Complex field_val = Complex(0.0f);
