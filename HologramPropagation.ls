@@ -171,6 +171,7 @@ void ExtractField(
     vec2 p1,
     sampler2D field_fft,
     int size,
+    int line_idx,
     int simulate_evanescent_waves,
     int simulate_wave_occlusion,
     float wavelength)
@@ -181,7 +182,7 @@ void ExtractField(
     for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
     {
       PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, size, wavelength);
-      Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, 0), 0).xy;
+      Complex contrib = texelFetch(field_fft, ivec2(harmonic_idx, line_idx), 0).xy;
       ComplexVec delta = ComplexVecFromReIm(pos - center, Complex(0.0f));
       Complex complex_phase = MulI(ComplexDot(delta, planar_wave.wave_vec));
 
@@ -197,63 +198,6 @@ void ExtractField(
       res += contrib;
     }
     return res;
-  }
-
-  Complex ReconstructField2(
-    vec2 pos,
-    vec2 p0,
-    vec2 p1,
-    sampler2D field_fft,
-    int size,
-    int simulate_evanescent_waves,
-    int simulate_wave_occlusion,
-    float wavelength)
-  {
-    vec2 center = (p0 + p1) * 0.5f;
-
-    float ratio = dot(pos - p0, p1 - p0) / dot(p1 - p0, p1 - p0);
-    int j = int(ratio * float(size));
-    Complex res = Complex(0.0f);
-    for(int harmonic_idx = 0; harmonic_idx < int(size); harmonic_idx++)
-    {
-      PlanarWave ref_wave = GetReferenceWave(
-        harmonic_idx,
-        p0,
-        p1,
-        field_fft,
-        size,
-        wavelength);
-
-      ComplexVec delta = ComplexVecFromReIm(pos, Complex(0.0f));
-      Complex complex_phase = Exp(MulI(ComplexDot(delta, ref_wave.wave_vec)));
-
-      res += Mul(complex_phase, ref_wave.phase_mult);
-    }
-    return res;
-  }
-  Complex ReconstructRefField(
-    vec2 pos,
-    sampler2D ref_field_fft,
-    int scene_size,
-    int field_size,
-    float wavelength)
-  {
-    vec2 p0 = vec2(0.0f);
-    vec2 p1 = vec2(float(scene_size), 0.0f);
-
-    Complex res = Complex(0.0f);
-    for(int harmonic_idx = 0; harmonic_idx < int(field_size); harmonic_idx++)
-    {
-      PlanarWave planar_wave = GetPlanarWaveFromHarmonic(p0, p1, harmonic_idx, field_size, wavelength);
-      Complex contrib = texelFetch(ref_field_fft, ivec2(harmonic_idx, 0), 0).xy;
-      ComplexVec delta = ComplexVecFromReIm(pos, Complex(0.0f));
-      Complex complex_phase = MulI(ComplexDot(delta, planar_wave.wave_vec));
-
-      contrib = Mul(contrib, Exp(complex_phase));
-      contrib *= IsRightQuadrant(planar_wave.wave_vec);
-      res += contrib;
-    }
-    return res; 
   }
 }}
 
@@ -308,7 +252,17 @@ void PropagateField(
     out_field_color = vec4(GetSceneField(scene_size, gl_FragCoord.xy), 0.0f, 1.0f);
   }else
   {
-    out_field_color = texelFetch(in_field_fft, ivec2(point_idx.x, prev_line_idx), 0);
+    Complex res_field = ReconstructField(
+      point_pos,
+      GetGridPointPos(scene_size, field_size, vec2(0.0f, point_idx.y)),
+      GetGridPointPos(scene_size, field_size, vec2(field_size.x - 1u, point_idx.y)),
+      in_field_fft,
+      int(field_size.x),
+      int(prev_line_idx),
+      1,
+      1,
+      wavelength);
+    out_field_color = vec4(res_field, 0.0f, 1.0f);
   }
 /*  Complex field_val = Complex(0.0f);
   if(point_idx.y == 0u)
