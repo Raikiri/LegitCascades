@@ -302,7 +302,7 @@ void RenderGraphMain()
     uvec2 size = GetSwapchainImage().GetSize();
     ClearShader(GetSwapchainImage());
 
-    uvec2 field_res = uvec2(SliderInt("DFT resolution", 16, 4096, 4096), 1);
+    uvec2 field_res = uvec2(SliderInt("DFT resolution2", 16, 2048, 2048), 1);
     Image ref_black_fft = GetImage(field_res, rgba32f);
     Image ref_field_fft0 = GetImage(field_res, rgba32f);
     Image ref_field_fft1 = GetImage(field_res, rgba32f);
