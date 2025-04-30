@@ -315,8 +315,8 @@ void RenderGraphMain()
     ClearShader(GetSwapchainImage());
 
     uvec2 field_size = uvec2(
-      SliderInt("DFT resolution", 16, 2048, 128),
-      SliderInt("Lines count", 1, 256, 4));
+      SliderInt("DFT resolution", 16, 2048, 2048),
+      SliderInt("Lines count", 1, 256, 8));
 
     Image curr_field_img = GetImage(field_size, rgba32f);
     Image curr_field_fft = GetImage(field_size, rgba32f);
