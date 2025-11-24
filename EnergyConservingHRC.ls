@@ -1,3 +1,6 @@
+// Available at
+// https://radiance-cascades.github.io/LegitScriptEditor/?gh=Raikiri/LegitCascades/EnergyConservingHRC.ls
+
 [declaration: "config"]
 {{
   #define POS_FIRST_LAYOUT 1
