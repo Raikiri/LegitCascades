@@ -28,7 +28,7 @@
     return tmax >= tmin;
   }
 
-  float cross2d(vec2 v0, vec2 v1)
+  float cross2(vec2 v0, vec2 v1)
   {
     return v0.x * v1.y - v0.y * v1.x;
   }
@@ -75,7 +75,28 @@
       if(fract(range0.y - range0.x) > 0.5f) range0 = range0.yx;
       if(fract(range1.y - range1.x) > 0.5f) range1 = range1.yx;
       
-      return max(WrappedIntersection(range0, range1), WrappedIntersection(range0 + vec2(0.5f), range1));
+      return max(WrappedIntersection(range0, range1), WrappedIntersection(range0 + vec2(0.5f), range1)) * 2.0f;
+  }
+
+  struct RaySample
+  {
+      vec2 ray_start;
+      vec2 ray_end;
+      float weight;
+  };
+  RaySample SampleBundleRay(vec4 edge0, vec4 edge1, vec2 ratio)
+  {
+      RaySample ray_sample;
+      ray_sample.ray_start = mix(edge0.xy, edge0.zw, ratio.x);
+      ray_sample.ray_end = mix(edge1.xy, edge1.zw, ratio.y);
+
+      vec2 dir = normalize(ray_sample.ray_end - ray_sample.ray_start);
+
+      float sin0 = abs(cross2(dir, normalize(edge0.zw - edge0.xy)));
+      float sin1 = abs(cross2(dir, normalize(edge1.zw - edge1.xy)));
+
+      ray_sample.weight = sin0 * sin1;// * length(edge0.zw - edge0.xy) * length(edge1.zw - edge1.xy) / (length(ray_sample.ray_end - ray_sample.ray_start) * 3.1415f);
+      return ray_sample;
   }
 }}
 
@@ -151,22 +172,27 @@
     );
   }
 
-  vec2 RayToPointIdsf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, uint probe_points_count, uint probe_spacing)
+  struct ProbeHit
+  {
+    bool is_hit;
+    vec2 point_idsf;
+    vec2 t;
+  };
+  ProbeHit RayToPointIdsf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, uint probe_points_count, uint probe_spacing)
   {
     vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
-    vec2 t;
-    bool is_hit = RayAABBIntersect(probe_minmax, ray_origin, ray_dir, t.x, t.y);
-    if(!is_hit || t.x < -1e-5f) return vec2(-1.0f);
+    ProbeHit probe_hit;
+    probe_hit.is_hit = RayAABBIntersect(probe_minmax, ray_origin, ray_dir, probe_hit.t.x, probe_hit.t.y);
+    if(!probe_hit.is_hit || probe_hit.t.x < -1e-5f) return probe_hit;
 
-    vec2 point_idsf;
     for(uint i = 0u; i < 2u; i++)
     {
-      vec2 inter_point = ray_origin + ray_dir * t[i];
+      vec2 inter_point = ray_origin + ray_dir * probe_hit.t[i];
       vec2 norm_pos = (inter_point - probe_minmax.xy) / float(probe_spacing);
 
-      point_idsf[i] = GetNormAAABBPerimeterRatio(norm_pos);
+      probe_hit.point_idsf[i] = GetNormAAABBPerimeterRatio(norm_pos);
     }
-    return point_idsf;
+    return probe_hit;
   }
 
   uint GetProbeSpacing(uint c0_probe_spacing, uint cascade_idx)
@@ -179,7 +205,7 @@
   }
 }}
 
-[include: "pcg", "block_probe_layout"]
+[include: "pcg", "block_probe_layout", "hrc_basis"]
 void ExtendCascade(
   uint c0_probe_spacing,
   uint c0_probe_points_count,
@@ -221,26 +247,21 @@ void ExtendCascade(
           for(uint x = 0u; x < count; x++)
           {
             vec2 ratio = (vec2(x, y) + vec2(0.5f)) / float(count);
-            vec2 ray_start = mix(dst_edge0.xy, dst_edge0.zw, ratio.x);
-            vec2 ray_end = mix(dst_edge1.xy, dst_edge1.zw, ratio.y);
-            vec2 ray_dir = normalize(ray_end - ray_start);
-            vec2 dir0 = normalize(dst_edge0.zw - dst_edge0.xy);
-            vec2 dir1 = normalize(dst_edge1.zw - dst_edge1.xy);
-            float w = abs(asin(cross2d(dir0, ray_dir))) * abs(asin(cross2d(dir1, ray_dir)));
-            vec2 src_point_idsf = RayToPointIdsf(src_probe_idx, ray_start, ray_end - ray_start, src_probe_points_count, src_probe_spacing);
-            if(src_point_idsf.x > 0.0f)
+            RaySample ray_sample = SampleBundleRay(dst_edge0, dst_edge1, ratio);
+            ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, ray_sample.ray_start, normalize(ray_sample.ray_end - ray_sample.ray_start), src_probe_points_count, src_probe_spacing);
+            if(src_probe_hit.is_hit)
             {
-              ivec2 src_point_ids = ivec2(floor(src_point_idsf));
+              ivec2 src_point_ids = ivec2(floor(src_probe_hit.point_idsf));
               ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_point_ids, src_probe_points_count);
 
-              color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0) / float(count * count);
+              color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * ray_sample.weight / float(count * count);///* * (src_probe_hit.t.y - src_probe_hit.t.x)*/ / float(count * count);
             }
           }
         }
       }
     }
   }
-
+  //color /= color.a + 1e-7f;
   //if(dst_interval_idx.point_ids.y == 6) color = vec4(1.0f, 0.5f, 0.0f, 1.0f);
 }}
 
