@@ -389,7 +389,7 @@ void SetCascade(
 
   if((interval_idx.probe_idx.x == 5) && (interval_idx.probe_idx.y == 4))
   {
-    atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.5f;
+    atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.05f;
   }
 
   /*if(interval_idx.probe_idx.x == 0 && interval_idx.probe_idx.y == 0 && interval_idx.point_ids.x == 0 && interval_idx.point_ids.y == 5)
