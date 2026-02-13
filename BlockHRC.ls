@@ -416,7 +416,7 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 1;
+  uint c0_probe_spacing = 2;
   uint c0_probe_points_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
@@ -425,7 +425,7 @@ void RenderGraphMain()
   uvec2 c0_probes_count = viewport_size / c0_probe_spacing;
   for(uint cascade_idx = 0; cascade_idx < cascades_count; cascade_idx++)
   {
-    uvec2 curr_probes_count = (viewport_size) / curr_probe_spacing;
+    uvec2 curr_probes_count = (viewport_size + uvec2(curr_probe_spacing - 1)) / curr_probe_spacing;
     uvec2 curr_size = curr_probes_count * curr_probe_points_count * 4;
     extended_cascades.insertLast(GetImage(curr_size, rgba16f));
     merged_cascades.insertLast(GetImage(curr_size, rgba16f));
@@ -459,7 +459,7 @@ void RenderGraphMain()
     extended_cascades[0],
     GetSwapchainImage()
   );*/
-  int gather_cascade_idx = SliderInt("Gather cascade_idx", 0, cascades_count - 1, 0);
+  int gather_cascade_idx = SliderInt("Gather cascade_idx", 0, cascades_count - 1, 8);
 
   FinalGatheringShader(
     c0_probe_spacing,
