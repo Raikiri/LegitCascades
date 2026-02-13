@@ -18,10 +18,16 @@
       //return length(proj - p);
   }
 
+  vec2 SafeInv(vec2 dir)
+  {
+    return vec2(dir.x == 0.0f ? 1e7f : 1.0f / dir.x, dir.y == 0.0f ? 1e7f : 1.0f / dir.y);
+  }
+
   bool RayAABBIntersect(vec4 aabb_minmax, vec2 ray_origin, vec2 ray_dir, out float tmin, out float tmax)
   {
-    vec2 t1 = (aabb_minmax.xy - ray_origin) / ray_dir;
-    vec2 t2 = (aabb_minmax.zw - ray_origin) / ray_dir;
+    vec2 inv_dir = SafeInv(ray_dir);
+    vec2 t1 = (aabb_minmax.xy - ray_origin) * inv_dir;
+    vec2 t2 = (aabb_minmax.zw - ray_origin) * inv_dir;
 
     tmin = max(min(t1.x, t2.x), min(t1.y, t2.y));
     tmax = min(max(t1.x, t2.x), max(t1.y, t2.y));
@@ -243,13 +249,15 @@ void ExtendCascade(
       ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
       if(src_probe_hit.is_hit)
       {
-        ivec2 src_point_ids = ivec2(floor(src_probe_hit.point_idsf));
+        ivec2 src_point_ids = ivec2(floor(src_probe_hit.point_idsf/* + vec2(-1e-1f, 1e-1f)*/));
         ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_point_ids.xy, src_probe_points_count);
 
         color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba;
       }
     }
   }
+
+  //if(dst_interval_idx.point_ids.y == 6 && dst_interval_idx.point_ids.x == 3) color += vec4(0.0f, 1.0f, 0.0f, 0.0f);
 
 
   /*if(dst_interval_idx.probe_idx.x == 0 && dst_interval_idx.probe_idx.y == 0 && dst_interval_idx.point_ids.x == 1 && dst_interval_idx.point_ids.y == 13)
@@ -387,7 +395,7 @@ void SetCascade(
   IntervalIdx interval_idx = AtlasTexelIdxToIntervalIdx(atlas_texel_idx, probe_points_count);
   atlas_texel = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-  if((interval_idx.probe_idx.x == 5) && (interval_idx.probe_idx.y == 4))
+  if((interval_idx.probe_idx.x == 3) && (interval_idx.probe_idx.y == 3))
   {
     atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.05f;
   }
@@ -416,7 +424,7 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 2;
+  uint c0_probe_spacing = 32;
   uint c0_probe_points_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
@@ -469,7 +477,7 @@ void RenderGraphMain()
     GetSwapchainImage()
   );
   /*CopyShader(
-    extended_cascades[2],
+    extended_cascades[7],
     GetSwapchainImage());*/
 
   Text("Fps: " + GetSmoothFps());
