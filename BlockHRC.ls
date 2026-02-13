@@ -210,7 +210,7 @@
   }
 }}
 
-[include: "pcg", "block_probe_layout", "hrc_basis"]
+[include: "pcg", "block_probe_layout", "hrc_basis", "bilinear_interpolation"]
 void ExtendCascade(
   uint c0_probe_spacing,
   uint c0_probe_points_count,
@@ -240,6 +240,23 @@ void ExtendCascade(
   vec2 midpoint0 = mix(dst_edge0.xy, dst_edge0.zw, 0.5f);
   vec2 midpoint1 = mix(dst_edge1.xy, dst_edge1.zw, 0.5f);
 
+  /*for(uint y_offset = 0u; y_offset < 2u; y_offset++)
+  {
+    for(uint x_offset = 0u; x_offset < 2u; x_offset++)
+    {
+      //ivec2 src_probe_idx = ivec2(4, 3);
+      ivec2 src_probe_idx = dst_interval_idx.probe_idx * 2 + ivec2(x_offset, y_offset);  
+      ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
+      if(src_probe_hit.is_hit)
+      {
+        ivec2 src_point_ids = ivec2(floor(src_probe_hit.point_idsf));
+        ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_point_ids.xy, src_probe_points_count);
+
+        color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * 0.5f;
+      }
+    }
+  }*/
+
   for(uint y_offset = 0u; y_offset < 2u; y_offset++)
   {
     for(uint x_offset = 0u; x_offset < 2u; x_offset++)
@@ -249,10 +266,15 @@ void ExtendCascade(
       ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
       if(src_probe_hit.is_hit)
       {
-        ivec2 src_point_ids = ivec2(floor(src_probe_hit.point_idsf/* + vec2(-1e-1f, 1e-1f)*/));
-        ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_point_ids.xy, src_probe_points_count);
+        BilinearSamples bilinear_samples = GetBilinearSamples(src_probe_hit.point_idsf);
+        vec4 weights = GetBilinearWeights(bilinear_samples.ratio);
+        for(uint sample_idx = 0u; sample_idx < 4u; sample_idx++)
+        {
+          ivec2 src_point_ids = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx)) % ivec2(src_probe_points_count * 4u);
+          ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_point_ids.xy, src_probe_points_count);
 
-        color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba;
+          color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * 0.5f * weights[sample_idx];
+        }
       }
     }
   }
@@ -352,12 +374,23 @@ void FinalGatheringShader(
 
         vec2 midpoint0 = mix(edge0.xy, edge0.zw, 0.5f);
         vec2 midpoint1 = mix(edge1.xy, edge1.zw, 0.5f);
+
+        ivec2 test_probe_idx = ivec2(90, 50);
+        vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
+
         vec2 t;
+        bool light_aabb_hit = RayAABBIntersect(test_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
+        bool pixel_aabb_hit = RayAABBIntersect(pixel_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
+        if(pixel_aabb_hit && light_aabb_hit)
+        {
+          color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * 1e-3f * (t.y - t.x);
+        }
+        /*vec2 t;
         bool aabb_hit = RayAABBIntersect(pixel_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
         if(aabb_hit)
         {
           color += texelFetch(cascade_atlas, atlas_texel_idx, 0) * (t.y - t.x);
-        }
+        }*/
       }
     }
   }
@@ -395,9 +428,10 @@ void SetCascade(
   IntervalIdx interval_idx = AtlasTexelIdxToIntervalIdx(atlas_texel_idx, probe_points_count);
   atlas_texel = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-  if((interval_idx.probe_idx.x == 3) && (interval_idx.probe_idx.y == 3))
+  if((interval_idx.probe_idx.x == 60) && (interval_idx.probe_idx.y == 50))
+  //if(length(vec2(interval_idx.probe_idx) - vec2(160.0f, 50.0f)) < 1.0f)
   {
-    atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.05f;
+    atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.5f;
   }
 
   /*if(interval_idx.probe_idx.x == 0 && interval_idx.probe_idx.y == 0 && interval_idx.point_ids.x == 0 && interval_idx.point_ids.y == 5)
@@ -424,7 +458,7 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 32;
+  uint c0_probe_spacing = 2;
   uint c0_probe_points_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
