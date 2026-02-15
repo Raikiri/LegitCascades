@@ -1,5 +1,5 @@
 // Available at
-// https://radiance-cascades.github.io/LegitScriptEditor/?gh=Raikiri/LegitCascades/EnergyConservingHRC.ls
+// https://radiance-cascades.github.io/LegitScriptEditor/?gh=Raikiri/LegitCascades/BlockHRC.ls
 
 [declaration: "config"]
 {{
