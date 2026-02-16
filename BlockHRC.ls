@@ -123,7 +123,8 @@
   }
 }}
 
-[declaration: "block_probe_layout"]
+
+[declaration: "block_probe_layout2"]
 [include: "geometry_utils"]
 {{
   struct IntervalIdx
@@ -305,6 +306,7 @@
     return c0_probe_points_count << cascade_idx;
   }
 }}
+
 
 [include: "pcg", "block_probe_layout", "hrc_basis", "bilinear_interpolation"]
 void ExtendCascade(
@@ -660,8 +662,7 @@ void SceneShader(uvec2 size, out vec4 radiance)
   {
     v = v * 1664525u + 1013904223u;
     v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y;
-    //v += v.yzx * v.zxy; //swizzled notation is not exactly the
-     same because components depend on each other, but works too
+    //v += v.yzx * v.zxy; //swizzled notation is not exactly the same because components depend on each other, but works too
 
     v ^= v >> 16u;
     v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y;
@@ -724,5 +725,189 @@ void SceneShader(uvec2 size, out vec4 radiance)
     ContextFloat("prev_time") = GetTime();
 
     return 1000.0 / (1e-7f + SmoothOverTime(dt, "fps_count"));
+  }
+}}
+
+
+[declaration: "block_probe_layout"]
+[include: "geometry_utils"]
+{{
+  struct IntervalIdx
+  {
+    ivec2 probe_idx;
+    ivec2 line_idx;
+  };
+
+  IntervalIdx AtlasTexelIdxToIntervalIdx(ivec2 atlas_texel_idx, uint probe_points_count)
+  {
+    uvec2 block_size = uvec2(probe_points_count);
+    IntervalIdx interval_idx;
+    interval_idx.probe_idx = atlas_texel_idx / int(block_size);
+    interval_idx.line_idx = atlas_texel_idx % int(block_size);
+    return interval_idx;
+  }
+
+  ivec2 IntervalIdxToAtlasTexelIdx(ivec2 probe_idx, ivec2 line_idx, uint probe_points_count)
+  {
+    uvec2 block_size = uvec2(probe_points_count);
+    return ivec2(block_size) * probe_idx + line_idx;
+  }
+
+  vec2 GetNormAABBPerimeterPoint(float ratio)
+  {
+    float perimeter_coord = ratio * 4.0f;
+    int side_idx = int(floor(perimeter_coord)) % 4;
+    float side_ratio = fract(perimeter_coord);
+
+    if(side_idx == 0) return vec2(side_ratio, 0.0f);
+    if(side_idx == 1) return vec2(1.0f, side_ratio);
+    if(side_idx == 2) return vec2(1.0f - side_ratio, 1.0f);
+    return vec2(0.0f, 1.0f - side_ratio);
+  }
+
+  float GetNormAAABBPerimeterRatio(vec2 point)
+  {
+    float eps = 1e-2f;
+    if(point.y < eps)
+      return (point.x + 0.0f) / 4.0f;
+    if(point.x > 1.0f - eps)
+      return (point.y + 1.0f) / 4.0f;
+    if(point.y > 1.0f - eps)
+      return ((1.0f - point.x) + 2.0f) / 4.0f;
+    return ((1.0f - point.y) + 3.0f) / 4.0f;
+  }
+
+
+  const vec2 norm_circle_center = vec2(0.5f, 0.5f);
+  const float norm_circle_radius = sqrt(2.0f) / 2.0f;
+
+  vec2 GetNormCirclePoint(float ratio)
+  {
+    float ang = fract(ratio) * 2.0f * 3.141592f;
+    return norm_circle_center + vec2(cos(ang), sin(ang)) * norm_circle_radius;
+  }
+
+  float GetNormCircleRatio(vec2 circle_point)
+  {
+    vec2 delta = circle_point - norm_circle_center;
+    float ang = atan(delta.y, delta.x);
+    return fract(ang / (2.0f * 3.141592f));
+  }
+
+  vec2 RealToLinespaceAABB(vec4 norm_edge)
+  {
+    vec2 norm_dir = norm_edge.zw - norm_edge.xy;
+    vec2 t;
+    bool is_hit = RayAABBIntersect(vec4(0.0f, 0.0f, 1.0f, 1.0f), norm_edge.xy, norm_dir, t.x, t.y);
+    vec4 norm_inter_edge;
+    norm_inter_edge.xy = norm_edge.xy + norm_dir * t.x;
+    norm_inter_edge.zw = norm_edge.xy + norm_dir * t.y;
+    vec2 linespace = vec2(GetNormAAABBPerimeterRatio(norm_inter_edge.xy), GetNormAAABBPerimeterRatio(norm_inter_edge.zw));
+    if(!is_hit)
+      linespace = vec2(-1.0f);
+    return linespace;
+  }
+  vec4 LinespaceToRealAABB(vec2 line_coords)
+  {
+    return vec4(GetNormAABBPerimeterPoint(line_coords.x), GetNormAABBPerimeterPoint(line_coords.y));
+    //return vec4(GetNormCirclePoint(line_coords.x), GetNormCirclePoint(line_coords.y));
+  }
+
+  vec2 RealToLinespaceCircle(vec4 norm_edge)
+  {
+    vec2 norm_dir = norm_edge.zw - norm_edge.xy;
+    vec2 t = RaySphereIntersect(norm_edge.xy, norm_dir, norm_circle_center, norm_circle_radius);
+    bool is_hit = t.x < 1e5f;
+
+    vec4 norm_inter_edge;
+    norm_inter_edge.xy = norm_edge.xy + norm_dir * t.x;
+    norm_inter_edge.zw = norm_edge.xy + norm_dir * t.y;
+    vec2 linespace = vec2(GetNormCircleRatio(norm_inter_edge.xy), GetNormCircleRatio(norm_inter_edge.zw));
+    if(!is_hit)
+      linespace = vec2(-1.0f);
+    return linespace;
+  }
+
+  vec4 LinespaceToRealCircle(vec2 line_coords)
+  {
+    //return vec4(GetNormAABBPerimeterPoint(line_coords.x), GetNormAABBPerimeterPoint(line_coords.y));
+    return vec4(GetNormCirclePoint(line_coords.x), GetNormCirclePoint(line_coords.y));
+  }
+
+  vec2 RealToLinespaceAngdist(vec4 norm_edge)
+  {
+    vec2 norm_dir = norm_edge.zw - norm_edge.xy;
+    vec2 norm_perp = normalize(vec2(-norm_dir.y, norm_dir.x));
+
+    float ang = atan(norm_dir.y, norm_dir.x);
+    return vec2(fract(ang / (pi * 2.0f)), dot(norm_perp, norm_edge.xy - vec2(0.5f)) + 0.5f);
+  }
+
+  vec4 LinespaceToRealAngdist(vec2 line_coords)
+  {
+    float ang = line_coords.x * pi * 2.0f;
+    vec2 dir = vec2(cos(ang), sin(ang));
+    vec2 perp = vec2(-dir.y, dir.x);
+    vec2 origin = vec2(0.5f) + perp * (line_coords.y - 0.5f);
+    return vec4(origin - dir * 0.0f, origin + dir * 1.0f);
+  }
+
+  //#define LinespaceToReal LinespaceToRealAABB
+  //#define RealToLinespace RealToLinespaceAABB
+  //#define LinespaceToReal LinespaceToRealCircle
+  //#define RealToLinespace RealToLinespaceCircle
+  #define LinespaceToReal LinespaceToRealAngdist
+  #define RealToLinespace RealToLinespaceAngdist
+
+  vec4 IntervalIdxToIntervalPoints(ivec2 probe_idx, ivec2 line_idx, uint probe_points_count, uint probe_spacing)
+  {
+    vec2 ratio = (vec2(line_idx) + vec2(0.5f)) / float(probe_points_count);
+    vec4 norm_points = LinespaceToReal(ratio);
+    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
+    return vec4(
+      probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_points.xy,
+      probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_points.zw
+    );
+  }
+
+  vec4 GetProbePointEdge(ivec2 probe_idx, int point_idx, uint probe_points_count, uint probe_spacing)
+  {
+    vec2 edge_ratio = vec2(point_idx, point_idx + 1) / float(probe_points_count);
+
+    vec4 norm_edge_points = LinespaceToReal(edge_ratio);
+
+    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
+    return vec4(
+      probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_edge_points.xy,
+      probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_edge_points.zw
+    );
+  }
+
+  struct ProbeHit
+  {
+    bool is_hit;
+    vec2 line_idxf;
+  };
+  ProbeHit RayToPointIdsf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, uint probe_points_count, uint probe_spacing)
+  {
+    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
+    vec2 norm_ray_origin = (ray_origin - probe_minmax.xy) / float(probe_spacing);
+    vec2 norm_ray_end = (ray_origin + ray_dir - probe_minmax.xy) / float(probe_spacing);
+
+    ProbeHit probe_hit;
+    vec2 norm_linespace = RealToLinespace(vec4(norm_ray_origin, norm_ray_end));
+    probe_hit.line_idxf = norm_linespace * float(probe_points_count) - vec2(0.5f);
+    probe_hit.is_hit = norm_linespace.x >= 0.0f;
+
+    return probe_hit;
+  }
+
+  uint GetProbeSpacing(uint c0_probe_spacing, uint cascade_idx)
+  {
+    return c0_probe_spacing << cascade_idx;
+  }
+  uint GetProbePointsCount(uint c0_probe_points_count, uint cascade_idx)
+  {
+    return c0_probe_points_count << cascade_idx;
   }
 }}
