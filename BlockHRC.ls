@@ -232,7 +232,7 @@
     vec2 dir;
   };
 
-  Ray LineCoordToRay(vec2 line_coord)
+  Ray LineCoordToRay1(vec2 line_coord)
   {
     float ang = line_coord.x * pi * 1.0f;
     
@@ -244,12 +244,75 @@
     return ray;
   }
   
+  vec2 RayToLineCoord1(vec2 origin, vec2 dir)
+  {
+    vec2 perp = normalize(vec2(-dir.y, dir.x));
+
+    float ang = atan(dir.y, dir.x);
+    return vec2(fract(ang / (pi * 2.0f)), dot(perp, origin - vec2(0.5f)) / sqrt(2.0f) + 0.5f);
+  }
+
+  vec2 GetBlockPerimeterPoint(float ratio)
+  {
+    float perimeter_coord = ratio * 4.0f;
+    int side_idx = int(floor(perimeter_coord)) % 4;
+    float side_ratio = fract(perimeter_coord);
+
+    if(side_idx == 0) return vec2(side_ratio, 0.0f);
+    if(side_idx == 1) return vec2(1.0f, side_ratio);
+    if(side_idx == 2) return vec2(1.0f - side_ratio, 1.0f);
+    return vec2(0.0f, 1.0f - side_ratio);
+  }
+
+  float GetBlockPerimeterRatio(vec2 point)
+  {
+    float eps = 1e-2f;
+    if(point.y < eps)
+      return (point.x + 0.0f) / 4.0f;
+    if(point.x > 1.0f - eps)
+      return (point.y + 1.0f) / 4.0f;
+    if(point.y > 1.0f - eps)
+      return ((1.0f - point.x) + 2.0f) / 4.0f;
+    return ((1.0f - point.y) + 3.0f) / 4.0f;
+  }
+
+
+  Ray LineCoordToRay2(vec2 line_coord)
+  {
+    Ray ray;
+    ray.origin = GetBlockPerimeterPoint(line_coord.x);
+    ray.dir = GetBlockPerimeterPoint(ceil(line_coord.x * 4.0f) * 0.25f + 0.75f * line_coord.y) - ray.origin;
+    //ray.origin = vec2(line_coord.x, 0.0);
+    //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
+    //ray.dir = vec2(2.0f * line_coord.y - 1.0f, 1.0f);
+    //ray.origin = vec2(line_coord.x);
+    //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
+    
+    return ray;
+  }
+  
   vec2 RayToLineCoord(vec2 origin, vec2 dir)
   {
     vec2 perp = normalize(vec2(-dir.y, dir.x));
 
     float ang = atan(dir.y, dir.x);
     return vec2(fract(ang / (pi * 2.0f)), dot(perp, origin - vec2(0.5f)) / sqrt(2.0f) + 0.5f);
+  }
+
+
+  Ray LineCoordToRay(vec2 line_coord)
+  {
+    vec2 ang = line_coord * pi * 2.0f;
+    Ray ray;
+    ray.origin = vec2(cos(ang.x), sin(ang.x)) * sqrt(2.0f) / 2.0f + vec2(0.5f);
+    ray.dir = vec2(cos(ang.y), sin(ang.y)) * sqrt(2.0f) / 2.0f + vec2(0.5f) - ray.origin;
+    //ray.origin = vec2(line_coord.x, 0.0);
+    //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
+    //ray.dir = vec2(2.0f * line_coord.y - 1.0f, 1.0f);
+    //ray.origin = vec2(line_coord.x);
+    //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
+    
+    return ray;
   }
 }}
 
@@ -474,7 +537,7 @@ void FinalGatheringShader(
 
         ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(block_idx, ivec2(line_idx), block_lines_count2);
 
-        ivec2 test_probe_idx = ivec2(13, 17);
+        ivec2 test_probe_idx = ivec2(8, 17);
         vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
 
         vec2 t;
