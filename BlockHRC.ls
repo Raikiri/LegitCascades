@@ -129,7 +129,7 @@
   struct IntervalIdx
   {
     ivec2 probe_idx;
-    ivec2 point_ids;
+    ivec2 line_idx;
   };
 
   IntervalIdx AtlasTexelIdxToIntervalIdx(ivec2 atlas_texel_idx, uint probe_points_count)
@@ -137,14 +137,14 @@
     uvec2 block_size = uvec2(probe_points_count);
     IntervalIdx interval_idx;
     interval_idx.probe_idx = atlas_texel_idx / int(block_size);
-    interval_idx.point_ids = atlas_texel_idx % int(block_size);
+    interval_idx.line_idx = atlas_texel_idx % int(block_size);
     return interval_idx;
   }
 
-  ivec2 IntervalIdxToAtlasTexelIdx(ivec2 probe_idx, ivec2 point_ids, uint probe_points_count)
+  ivec2 IntervalIdxToAtlasTexelIdx(ivec2 probe_idx, ivec2 line_idx, uint probe_points_count)
   {
     uvec2 block_size = uvec2(probe_points_count);
-    return ivec2(block_size) * probe_idx + point_ids;
+    return ivec2(block_size) * probe_idx + line_idx;
   }
 
   vec2 GetNormAABBPerimeterPoint(float ratio)
@@ -228,14 +228,34 @@
     return vec4(GetNormCirclePoint(line_coords.x), GetNormCirclePoint(line_coords.y));
   }
 
+  vec2 RealToLinespaceAngdist(vec4 norm_edge)
+  {
+    vec2 norm_dir = norm_edge.zw - norm_edge.xy;
+    vec2 norm_perp = normalize(vec2(-norm_dir.y, norm_dir.x));
+
+    float ang = atan(norm_dir.y, norm_dir.x);
+    return vec2(fract(ang / (pi * 2.0f)), dot(norm_perp, norm_edge.xy - vec2(0.5f)) + 0.5f);
+  }
+
+  vec4 LinespaceToRealAngdist(vec2 line_coords)
+  {
+    float ang = line_coords.x * pi * 2.0f;
+    vec2 dir = vec2(cos(ang), sin(ang));
+    vec2 perp = vec2(-dir.y, dir.x);
+    vec2 origin = vec2(0.5f) + perp * (line_coords.y - 0.5f);
+    return vec4(origin - dir * 0.0f, origin + dir * 1.0f);
+  }
+
   //#define LinespaceToReal LinespaceToRealAABB
   //#define RealToLinespace RealToLinespaceAABB
-  #define LinespaceToReal LinespaceToRealCircle
-  #define RealToLinespace RealToLinespaceCircle
+  //#define LinespaceToReal LinespaceToRealCircle
+  //#define RealToLinespace RealToLinespaceCircle
+  #define LinespaceToReal LinespaceToRealAngdist
+  #define RealToLinespace RealToLinespaceAngdist
 
-  vec4 IntervalIdxToIntervalPoints(ivec2 probe_idx, ivec2 point_ids, uint probe_points_count, uint probe_spacing)
+  vec4 IntervalIdxToIntervalPoints(ivec2 probe_idx, ivec2 line_idx, uint probe_points_count, uint probe_spacing)
   {
-    vec2 ratio = (vec2(point_ids) + vec2(0.5f)) / float(probe_points_count);
+    vec2 ratio = (vec2(line_idx) + vec2(0.5f)) / float(probe_points_count);
     vec4 norm_points = LinespaceToReal(ratio);
     vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
     return vec4(
@@ -260,7 +280,7 @@
   struct ProbeHit
   {
     bool is_hit;
-    vec2 point_idsf;
+    vec2 line_idxf;
   };
   ProbeHit RayToPointIdsf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, uint probe_points_count, uint probe_spacing)
   {
@@ -270,7 +290,7 @@
 
     ProbeHit probe_hit;
     vec2 norm_linespace = RealToLinespace(vec4(norm_ray_origin, norm_ray_end));
-    probe_hit.point_idsf = norm_linespace * float(probe_points_count) - vec2(0.5f);
+    probe_hit.line_idxf = norm_linespace * float(probe_points_count) - vec2(0.5f);
     probe_hit.is_hit = norm_linespace.x >= 0.0f;
 
     return probe_hit;
@@ -306,8 +326,8 @@ void ExtendCascade(
   ivec2 dst_atlas_texel = ivec2(gl_FragCoord.xy);
   IntervalIdx dst_interval_idx = AtlasTexelIdxToIntervalIdx(dst_atlas_texel, dst_probe_points_count);
 
-  vec4 dst_edge0 = GetProbePointEdge(dst_interval_idx.probe_idx, dst_interval_idx.point_ids.x, dst_probe_points_count, dst_probe_spacing);
-  vec4 dst_edge1 = GetProbePointEdge(dst_interval_idx.probe_idx, dst_interval_idx.point_ids.y, dst_probe_points_count, dst_probe_spacing);
+  vec4 dst_edge0 = GetProbePointEdge(dst_interval_idx.probe_idx, dst_interval_idx.line_idx.x, dst_probe_points_count, dst_probe_spacing);
+  vec4 dst_edge1 = GetProbePointEdge(dst_interval_idx.probe_idx, dst_interval_idx.line_idx.y, dst_probe_points_count, dst_probe_spacing);
 
 
 
@@ -325,8 +345,8 @@ void ExtendCascade(
       ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
       if(src_probe_hit.is_hit)
       {
-        ivec2 src_point_ids = ivec2(floor(src_probe_hit.point_idsf));
-        ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_point_ids.xy, src_probe_points_count);
+        ivec2 src_line_idx = ivec2(floor(src_probe_hit.line_idxf));
+        ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx.xy, src_probe_points_count);
 
         color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * 0.5f;
       }
@@ -342,12 +362,12 @@ void ExtendCascade(
       ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
       if(src_probe_hit.is_hit)
       {
-        BilinearSamples bilinear_samples = GetBilinearSamples(src_probe_hit.point_idsf);
+        BilinearSamples bilinear_samples = GetBilinearSamples(src_probe_hit.line_idxf);
         vec4 weights = GetBilinearWeights(bilinear_samples.ratio);
         for(uint sample_idx = 0u; sample_idx < 4u; sample_idx++)
         {
-          ivec2 src_point_ids = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx) + ivec2(src_probe_points_count)) % ivec2(src_probe_points_count);
-          ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_point_ids.xy, src_probe_points_count);
+          ivec2 src_line_idx = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx) + ivec2(src_probe_points_count)) % ivec2(src_probe_points_count);
+          ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx.xy, src_probe_points_count);
 
           color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * 0.5f * weights[sample_idx];
         }
@@ -355,14 +375,14 @@ void ExtendCascade(
     }
   }
 
-  //if(dst_interval_idx.point_ids.y == 6 && dst_interval_idx.point_ids.x == 3) color += vec4(0.0f, 1.0f, 0.0f, 0.0f);
+  //if(dst_interval_idx.line_idx.y == 6 && dst_interval_idx.line_idx.x == 3) color += vec4(0.0f, 1.0f, 0.0f, 0.0f);
 
 
-  /*if(dst_interval_idx.probe_idx.x == 0 && dst_interval_idx.probe_idx.y == 0 && dst_interval_idx.point_ids.x == 1 && dst_interval_idx.point_ids.y == 13)
+  /*if(dst_interval_idx.probe_idx.x == 0 && dst_interval_idx.probe_idx.y == 0 && dst_interval_idx.line_idx.x == 1 && dst_interval_idx.line_idx.y == 13)
   {
     color = vec4(0.0f, 1.0f, 0.0f, 1.0f);
   }*/
-  //if(dst_interval_idx.point_ids.x == 3 && dst_interval_idx.point_ids.y == 6)
+  //if(dst_interval_idx.line_idx.x == 3 && dst_interval_idx.line_idx.y == 6)
   /*{
     for(uint y_offset = 0u; y_offset < 2u; y_offset++)
     {
@@ -381,8 +401,8 @@ void ExtendCascade(
             ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, ray_sample.ray_start, normalize(ray_sample.ray_end - ray_sample.ray_start), src_probe_points_count, src_probe_spacing);
             if(src_probe_hit.is_hit)
             {
-              ivec2 src_point_ids = ivec2(floor(src_probe_hit.point_idsf));
-              ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_point_ids, src_probe_points_count);
+              ivec2 src_line_idx = ivec2(floor(src_probe_hit.line_idxf));
+              ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx, src_probe_points_count);
 
               //color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * ray_sample.weight / float(count * count);// * (src_probe_hit.t.y - src_probe_hit.t.x) / float(count * count);
             }
@@ -392,7 +412,7 @@ void ExtendCascade(
     }
   }*/
   //color /= color.a + 1e-7f;
-  //if(dst_interval_idx.point_ids.y == 6) color = vec4(1.0f, 0.5f, 0.0f, 1.0f);
+  //if(dst_interval_idx.line_idx.y == 6) color = vec4(1.0f, 0.5f, 0.0f, 1.0f);
 }}
 
 [include: "pcg", "block_probe_layout", "geometry_utils", "hrc_basis"]
@@ -439,22 +459,22 @@ void FinalGatheringShader(
     vec2 base_midpoint = mix(base_edge.xy, base_edge.zw, 0.5f);
     ProbeHit src_probe_hit = RayToPointIdsf(probe_idx, base_midpoint, normalize(pixel_pos - base_midpoint), probe_points_count, probe_spacing);
     {
-      ivec2 point_ids = (ivec2(round(src_probe_hit.point_idsf)) + ivec2(probe_points_count)) % ivec2(probe_points_count);
+      //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(probe_points_count)) % ivec2(probe_points_count);
       //color += vec4(0.1f);
-      //for(uint point_idx1 = 0u; point_idx1 < probe_points_count; point_idx1++)
+      for(uint point_idx1 = 0u; point_idx1 < probe_points_count; point_idx1++)
       {
-        //ivec2 point_ids = (ivec2(round(src_probe_hit.point_idsf)) + ivec2(probe_points_count)) % ivec2(probe_points_count);
-        //ivec2 point_ids = ivec2(point_idx0, point_idx1);
-        ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(probe_idx, ivec2(point_ids.x, point_ids.y), probe_points_count);
+        //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(probe_points_count)) % ivec2(probe_points_count);
+        ivec2 line_idx = ivec2(point_idx0, point_idx1);
+        ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(probe_idx, ivec2(line_idx.x, line_idx.y), probe_points_count);
 
-        vec4 edge0 = GetProbePointEdge(probe_idx, point_ids.x, probe_points_count, probe_spacing);
-        vec4 edge1 = GetProbePointEdge(probe_idx, point_ids.y, probe_points_count, probe_spacing);
+        vec4 edge0 = GetProbePointEdge(probe_idx, line_idx.x, probe_points_count, probe_spacing);
+        vec4 edge1 = GetProbePointEdge(probe_idx, line_idx.y, probe_points_count, probe_spacing);
 
         vec2 midpoint0 = mix(edge0.xy, edge0.zw, 0.5f);
         vec2 midpoint1 = mix(edge1.xy, edge1.zw, 0.5f);
 
 
-        /*ivec2 test_probe_idx = ivec2(32, 32);
+        ivec2 test_probe_idx = ivec2(32, 32);
         vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
 
         vec2 t;
@@ -463,14 +483,14 @@ void FinalGatheringShader(
         if(pixel_aabb_hit && light_aabb_hit)
         {
           color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * 5e-3f * (t.y - t.x);
-        }*/
+        }
 
-        vec2 t;
+        /*vec2 t;
         bool aabb_hit = RayAABBIntersect(pixel_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
         if(aabb_hit)
         {
           color += texelFetch(cascade_atlas, atlas_texel_idx, 0) * (t.y - t.x);
-        }
+        }*/
       }
     }
   }
@@ -514,7 +534,7 @@ void SetCascade(
     atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.1f;
   }
 
-  /*if(interval_idx.probe_idx.x == 0 && interval_idx.probe_idx.y == 0 && interval_idx.point_ids.x == 0 && interval_idx.point_ids.y == 5)
+  /*if(interval_idx.probe_idx.x == 0 && interval_idx.probe_idx.y == 0 && interval_idx.line_idx.x == 0 && interval_idx.line_idx.y == 5)
   {
     atlas_texel = vec4(0.0f, 1.0f, 0.0f, 1.0f);
   }else
@@ -640,7 +660,8 @@ void SceneShader(uvec2 size, out vec4 radiance)
   {
     v = v * 1664525u + 1013904223u;
     v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y;
-    //v += v.yzx * v.zxy; //swizzled notation is not exactly the same because components depend on each other, but works too
+    //v += v.yzx * v.zxy; //swizzled notation is not exactly the
+     same because components depend on each other, but works too
 
     v ^= v >> 16u;
     v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y;
