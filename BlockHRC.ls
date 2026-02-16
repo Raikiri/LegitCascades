@@ -234,7 +234,7 @@
 
   Ray LineCoordToRay(vec2 line_coord)
   {
-    float ang = line_coord.x * pi * 2.0f;
+    float ang = line_coord.x * pi * 1.0f;
     
     Ray ray;
     ray.dir = vec2(cos(ang), sin(ang));
@@ -459,6 +459,7 @@ void FinalGatheringShader(
   color = vec4(0.0f);
   uvec2 line_idx;
   for(line_idx.x = 0u; line_idx.x < block_lines_count2; line_idx.x++)
+  //line_idx.x = 0u;
   {
     //vec4 base_edge = GetProbePointEdge(block_idx, int(point_idx0), block_lines_count2, probe_spacing);
     //vec2 base_midpoint = mix(base_edge.xy, base_edge.zw, 0.5f);
@@ -473,7 +474,7 @@ void FinalGatheringShader(
 
         ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(block_idx, ivec2(line_idx), block_lines_count2);
 
-        ivec2 test_probe_idx = ivec2(32, 32);
+        ivec2 test_probe_idx = ivec2(13, 17);
         vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
 
         vec2 t;
@@ -557,8 +558,8 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 2;
-  uint c0_probe_points_count = 2;
+  uint c0_probe_spacing = 20;
+  uint c0_probe_points_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
   uint curr_probe_points_count = c0_probe_points_count;
