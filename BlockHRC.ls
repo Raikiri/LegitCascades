@@ -123,31 +123,10 @@
   }
 }}
 
-
-[declaration: "block_probe_layout2"]
+[declaration: "linespaces"]
 [include: "geometry_utils"]
 {{
-  struct IntervalIdx
-  {
-    ivec2 probe_idx;
-    ivec2 line_idx;
-  };
-
-  IntervalIdx AtlasTexelIdxToIntervalIdx(ivec2 atlas_texel_idx, uint probe_points_count)
-  {
-    uvec2 block_size = uvec2(probe_points_count);
-    IntervalIdx interval_idx;
-    interval_idx.probe_idx = atlas_texel_idx / int(block_size);
-    interval_idx.line_idx = atlas_texel_idx % int(block_size);
-    return interval_idx;
-  }
-
-  ivec2 IntervalIdxToAtlasTexelIdx(ivec2 probe_idx, ivec2 line_idx, uint probe_points_count)
-  {
-    uvec2 block_size = uvec2(probe_points_count);
-    return ivec2(block_size) * probe_idx + line_idx;
-  }
-
+  
   vec2 GetNormAABBPerimeterPoint(float ratio)
   {
     float perimeter_coord = ratio * 4.0f;
@@ -247,54 +226,77 @@
     return vec4(origin - dir * 0.0f, origin + dir * 1.0f);
   }
 
-  //#define LinespaceToReal LinespaceToRealAABB
-  //#define RealToLinespace RealToLinespaceAABB
-  //#define LinespaceToReal LinespaceToRealCircle
-  //#define RealToLinespace RealToLinespaceCircle
-  #define LinespaceToReal LinespaceToRealAngdist
-  #define RealToLinespace RealToLinespaceAngdist
-
-  vec4 IntervalIdxToIntervalPoints(ivec2 probe_idx, ivec2 line_idx, uint probe_points_count, uint probe_spacing)
+  struct Ray
   {
-    vec2 ratio = (vec2(line_idx) + vec2(0.5f)) / float(probe_points_count);
-    vec4 norm_points = LinespaceToReal(ratio);
-    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
-    return vec4(
-      probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_points.xy,
-      probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_points.zw
-    );
-  }
-
-  vec4 GetProbePointEdge(ivec2 probe_idx, int point_idx, uint probe_points_count, uint probe_spacing)
-  {
-    vec2 edge_ratio = vec2(point_idx, point_idx + 1) / float(probe_points_count);
-
-    vec4 norm_edge_points = LinespaceToReal(edge_ratio);
-
-    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
-    return vec4(
-      probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_edge_points.xy,
-      probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_edge_points.zw
-    );
-  }
-
-  struct ProbeHit
-  {
-    bool is_hit;
-    vec2 line_idxf;
+    vec2 origin;
+    vec2 dir;
   };
-  ProbeHit RayToPointIdsf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, uint probe_points_count, uint probe_spacing)
+
+  Ray LineCoordToRay(vec2 line_coord)
   {
-    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
-    vec2 norm_ray_origin = (ray_origin - probe_minmax.xy) / float(probe_spacing);
-    vec2 norm_ray_end = (ray_origin + ray_dir - probe_minmax.xy) / float(probe_spacing);
+    float ang = line_coord.x * pi * 2.0f;
+    
+    Ray ray;
+    ray.dir = vec2(cos(ang), sin(ang));
+    vec2 perp = vec2(-ray.dir.y, ray.dir.x);
+    ray.origin = vec2(0.5f) + perp * (line_coord.y - 0.5f) * sqrt(2.0f);
+    
+    return ray;
+  }
+  
+  vec2 RayToLineCoord(vec2 origin, vec2 dir)
+  {
+    vec2 perp = normalize(vec2(-dir.y, dir.x));
 
-    ProbeHit probe_hit;
-    vec2 norm_linespace = RealToLinespace(vec4(norm_ray_origin, norm_ray_end));
-    probe_hit.line_idxf = norm_linespace * float(probe_points_count) - vec2(0.5f);
-    probe_hit.is_hit = norm_linespace.x >= 0.0f;
+    float ang = atan(dir.y, dir.x);
+    return vec2(fract(ang / (pi * 2.0f)), dot(perp, origin - vec2(0.5f)) / sqrt(2.0f) + 0.5f);
+  }
+}}
 
-    return probe_hit;
+[declaration: "block_probe_layout2"]
+[include: "linespaces"]
+{{
+  struct IntervalIdx
+  {
+    ivec2 block_idx;
+    ivec2 line_idx;
+  };
+
+  IntervalIdx AtlasTexelIdxToIntervalIdx(ivec2 atlas_texel_idx, uint block_lines_count2)
+  {
+    uvec2 block_size = uvec2(block_lines_count2);
+    IntervalIdx interval_idx;
+    interval_idx.block_idx = atlas_texel_idx / int(block_size);
+    interval_idx.line_idx = atlas_texel_idx % int(block_size);
+    return interval_idx;
+  }
+
+  ivec2 IntervalIdxToAtlasTexelIdx(ivec2 block_idx, ivec2 line_idx, uint block_lines_count2)
+  {
+    uvec2 block_size = uvec2(block_lines_count2);
+    return ivec2(block_size) * block_idx + line_idx;
+  }  
+  
+  Ray LineIdxfToRay(ivec2 block_idx, vec2 line_idxf, uint block_lines_count2, uint probe_spacing)
+  {
+    vec2 line_coord = (line_idxf + vec2(0.5f)) / float(block_lines_count2);
+    Ray norm_ray = LineCoordToRay(line_coord);
+    vec4 probe_minmax = vec4(vec2(block_idx), vec2(block_idx + ivec2(1))) * float(probe_spacing);
+    
+    Ray ray;
+    ray.origin = probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_ray.origin;
+    ray.dir = norm_ray.dir;
+    return ray;
+  }
+
+  vec2 RayToLineIdxf(ivec2 block_idx, vec2 ray_origin, vec2 ray_dir, uint block_lines_count2, uint probe_spacing)
+  {
+    vec4 probe_minmax = vec4(vec2(block_idx), vec2(block_idx + ivec2(1))) * float(probe_spacing);
+    Ray norm_ray;
+    norm_ray.origin = (ray_origin - probe_minmax.xy) / float(probe_spacing);
+    norm_ray.dir = ray_dir;
+
+    return RayToLineCoord(norm_ray.origin, norm_ray.dir) * float(block_lines_count2) - vec2(0.5f);
   }
 
   uint GetProbeSpacing(uint c0_probe_spacing, uint cascade_idx)
@@ -328,8 +330,8 @@ void ExtendCascade(
   ivec2 dst_atlas_texel = ivec2(gl_FragCoord.xy);
   IntervalIdx dst_interval_idx = AtlasTexelIdxToIntervalIdx(dst_atlas_texel, dst_probe_points_count);
 
-  vec4 dst_edge0 = GetProbePointEdge(dst_interval_idx.probe_idx, dst_interval_idx.line_idx.x, dst_probe_points_count, dst_probe_spacing);
-  vec4 dst_edge1 = GetProbePointEdge(dst_interval_idx.probe_idx, dst_interval_idx.line_idx.y, dst_probe_points_count, dst_probe_spacing);
+  vec4 dst_edge0 = GetProbePointEdge(dst_interval_idx.block_idx, dst_interval_idx.line_idx.x, dst_probe_points_count, dst_probe_spacing);
+  vec4 dst_edge1 = GetProbePointEdge(dst_interval_idx.block_idx, dst_interval_idx.line_idx.y, dst_probe_points_count, dst_probe_spacing);
 
 
 
@@ -343,7 +345,7 @@ void ExtendCascade(
     for(uint x_offset = 0u; x_offset < 2u; x_offset++)
     {
       //ivec2 src_probe_idx = ivec2(4, 3);
-      ivec2 src_probe_idx = dst_interval_idx.probe_idx * 2 + ivec2(x_offset, y_offset);  
+      ivec2 src_probe_idx = dst_interval_idx.block_idx * 2 + ivec2(x_offset, y_offset);  
       ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
       if(src_probe_hit.is_hit)
       {
@@ -360,7 +362,7 @@ void ExtendCascade(
     for(uint x_offset = 0u; x_offset < 2u; x_offset++)
     {
       //ivec2 src_probe_idx = ivec2(4, 3);
-      ivec2 src_probe_idx = dst_interval_idx.probe_idx * 2 + ivec2(x_offset, y_offset);  
+      ivec2 src_probe_idx = dst_interval_idx.block_idx * 2 + ivec2(x_offset, y_offset);  
       ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
       if(src_probe_hit.is_hit)
       {
@@ -380,7 +382,7 @@ void ExtendCascade(
   //if(dst_interval_idx.line_idx.y == 6 && dst_interval_idx.line_idx.x == 3) color += vec4(0.0f, 1.0f, 0.0f, 0.0f);
 
 
-  /*if(dst_interval_idx.probe_idx.x == 0 && dst_interval_idx.probe_idx.y == 0 && dst_interval_idx.line_idx.x == 1 && dst_interval_idx.line_idx.y == 13)
+  /*if(dst_interval_idx.block_idx.x == 0 && dst_interval_idx.block_idx.y == 0 && dst_interval_idx.line_idx.x == 1 && dst_interval_idx.line_idx.y == 13)
   {
     color = vec4(0.0f, 1.0f, 0.0f, 1.0f);
   }*/
@@ -391,7 +393,7 @@ void ExtendCascade(
       for(uint x_offset = 0u; x_offset < 2u; x_offset++)
       {
         //ivec2 src_probe_idx = ivec2(4, 3);
-        ivec2 src_probe_idx = dst_interval_idx.probe_idx * 2 + ivec2(x_offset, y_offset);
+        ivec2 src_probe_idx = dst_interval_idx.block_idx * 2 + ivec2(x_offset, y_offset);
         
         uint count = 10u;
         for(uint y = 0u; y < count; y++)
@@ -417,7 +419,7 @@ void ExtendCascade(
   //if(dst_interval_idx.line_idx.y == 6) color = vec4(1.0f, 0.5f, 0.0f, 1.0f);
 }}
 
-[include: "pcg", "block_probe_layout", "geometry_utils", "hrc_basis"]
+[include: "pcg", "block_probe_layout2", "hrc_basis"]
 void FinalGatheringShader(
   uint c0_probe_spacing,
   uint c0_probe_points_count,
@@ -427,21 +429,21 @@ void FinalGatheringShader(
 {{
   vec2 pixel_pos = gl_FragCoord.xy;
   uint probe_spacing = GetProbeSpacing(c0_probe_spacing, cascade_idx);
-  uint probe_points_count = GetProbePointsCount(c0_probe_points_count, cascade_idx);
+  uint block_lines_count2 = GetProbePointsCount(c0_probe_points_count, cascade_idx);
   vec2 probe_idxf = pixel_pos / vec2(probe_spacing);
-  ivec2 probe_idx = ivec2(floor(probe_idxf));
-  //ivec2 probe_idx = ivec2(7, 5) / int(1u << cascade_idx);
+  ivec2 block_idx = ivec2(floor(probe_idxf));
+  //ivec2 block_idx = ivec2(7, 5) / int(1u << cascade_idx);
 
   vec4 pixel_aabb = vec4(pixel_pos - vec2(4.5f), pixel_pos + vec2(4.5f));
 
   /*color = vec4(0.0f);
-  for(uint point_idx0 = 0u; point_idx0 < probe_points_count * 4u; point_idx0++)
+  for(uint point_idx0 = 0u; point_idx0 < block_lines_count2 * 4u; point_idx0++)
   {
-    for(uint point_idx1 = 0u; point_idx1 < probe_points_count * 4u; point_idx1++)
+    for(uint point_idx1 = 0u; point_idx1 < block_lines_count2 * 4u; point_idx1++)
     {
-      ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(probe_idx, ivec2(point_idx0, point_idx1), probe_points_count);
-      vec4 edge0 = GetProbePointEdge(probe_idx, int(point_idx0), probe_points_count, probe_spacing);
-      vec4 edge1 = GetProbePointEdge(probe_idx, int(point_idx1), probe_points_count, probe_spacing);
+      ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(block_idx, ivec2(point_idx0, point_idx1), block_lines_count2);
+      vec4 edge0 = GetProbePointEdge(block_idx, int(point_idx0), block_lines_count2, probe_spacing);
+      vec4 edge1 = GetProbePointEdge(block_idx, int(point_idx1), block_lines_count2, probe_spacing);
 
       vec2 midpoint0 = mix(edge0.xy, edge0.zw, 0.5f);
       vec2 midpoint1 = mix(edge1.xy, edge1.zw, 0.5f);
@@ -455,33 +457,28 @@ void FinalGatheringShader(
   }*/
 
   color = vec4(0.0f);
-  for(uint point_idx0 = 0u; point_idx0 < probe_points_count; point_idx0++)
+  uvec2 line_idx;
+  for(line_idx.x = 0u; line_idx.x < block_lines_count2; line_idx.x++)
   {
-    vec4 base_edge = GetProbePointEdge(probe_idx, int(point_idx0), probe_points_count, probe_spacing);
-    vec2 base_midpoint = mix(base_edge.xy, base_edge.zw, 0.5f);
-    ProbeHit src_probe_hit = RayToPointIdsf(probe_idx, base_midpoint, normalize(pixel_pos - base_midpoint), probe_points_count, probe_spacing);
+    //vec4 base_edge = GetProbePointEdge(block_idx, int(point_idx0), block_lines_count2, probe_spacing);
+    //vec2 base_midpoint = mix(base_edge.xy, base_edge.zw, 0.5f);
+    //ProbeHit src_probe_hit = RayToPointIdsf(block_idx, base_midpoint, normalize(pixel_pos - base_midpoint), block_lines_count2, probe_spacing);
+    for(line_idx.y = 0u; line_idx.y < block_lines_count2; line_idx.y++)
     {
-      //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(probe_points_count)) % ivec2(probe_points_count);
+      //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(block_lines_count2)) % ivec2(block_lines_count2);
       //color += vec4(0.1f);
-      for(uint point_idx1 = 0u; point_idx1 < probe_points_count; point_idx1++)
       {
-        //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(probe_points_count)) % ivec2(probe_points_count);
-        ivec2 line_idx = ivec2(point_idx0, point_idx1);
-        ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(probe_idx, ivec2(line_idx.x, line_idx.y), probe_points_count);
+        //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(block_lines_count2)) % ivec2(block_lines_count2);
+        Ray ray = LineIdxfToRay(block_idx, vec2(line_idx), block_lines_count2, probe_spacing);
 
-        vec4 edge0 = GetProbePointEdge(probe_idx, line_idx.x, probe_points_count, probe_spacing);
-        vec4 edge1 = GetProbePointEdge(probe_idx, line_idx.y, probe_points_count, probe_spacing);
-
-        vec2 midpoint0 = mix(edge0.xy, edge0.zw, 0.5f);
-        vec2 midpoint1 = mix(edge1.xy, edge1.zw, 0.5f);
-
+        ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(block_idx, ivec2(line_idx), block_lines_count2);
 
         ivec2 test_probe_idx = ivec2(32, 32);
         vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
 
         vec2 t;
-        bool light_aabb_hit = RayAABBIntersect(test_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
-        bool pixel_aabb_hit = RayAABBIntersect(pixel_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
+        bool light_aabb_hit = RayAABBIntersect(test_aabb, ray.origin, normalize(ray.dir), t.x, t.y);
+        bool pixel_aabb_hit = RayAABBIntersect(pixel_aabb, ray.origin, normalize(ray.dir), t.x, t.y);
         if(pixel_aabb_hit && light_aabb_hit)
         {
           color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * 5e-3f * (t.y - t.x);
@@ -503,7 +500,7 @@ void FinalGatheringShader(
     float ratio = (float(dir_idx) + 0.5f) / float(count);
     float ang = ratio * pi * 2.0f;
     vec2 ray_dir = vec2(cos(ang), sin(ang));
-    vec2 point_idxf = RayToPointIdsf(probe_idx, pixel_pos, ray_dir, probe_points_count, probe_spacing);
+    vec2 point_idxf = RayToPointIdsf(block_idx, pixel_pos, ray_dir, block_lines_count2, probe_spacing);
     if(point_idxf.x > 3.0f && point_idxf.x < 3.99f && point_idxf.y > 0.0f && point_idxf.y < 1.0f)
     {
       color += vec4(1.0f, 0.5f, 0.0f, 0.0f) / float(count);
@@ -512,7 +509,7 @@ void FinalGatheringShader(
 
 
 
-  //ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(probe_idx, ivec2(1, 3), probe_points_count);
+  //ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(block_idx, ivec2(1, 3), block_lines_count2);
   //color += texelFetch(cascade_atlas, atlas_texel_idx, 0);
 }}
 
@@ -524,19 +521,19 @@ void SetCascade(
   out vec4 atlas_texel)
 {{
   ivec2 atlas_texel_idx = ivec2(gl_FragCoord.xy);
-  uint probe_points_count = GetProbePointsCount(c0_probe_points_count, cascade_idx);
+  uint block_lines_count2 = GetProbePointsCount(c0_probe_points_count, cascade_idx);
   uvec2 probe_spacing = uvec2(GetProbeSpacing(c0_probe_spacing, cascade_idx));
 
-  IntervalIdx interval_idx = AtlasTexelIdxToIntervalIdx(atlas_texel_idx, probe_points_count);
+  IntervalIdx interval_idx = AtlasTexelIdxToIntervalIdx(atlas_texel_idx, block_lines_count2);
   atlas_texel = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-  if((interval_idx.probe_idx.x == 30) && (interval_idx.probe_idx.y == 40))
-  //if(length(vec2(interval_idx.probe_idx) - vec2(160.0f, 50.0f)) < 2.0f)
+  if((interval_idx.block_idx.x == 30) && (interval_idx.block_idx.y == 40))
+  //if(length(vec2(interval_idx.block_idx) - vec2(160.0f, 50.0f)) < 2.0f)
   {
     atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.1f;
   }
 
-  /*if(interval_idx.probe_idx.x == 0 && interval_idx.probe_idx.y == 0 && interval_idx.line_idx.x == 0 && interval_idx.line_idx.y == 5)
+  /*if(interval_idx.block_idx.x == 0 && interval_idx.block_idx.y == 0 && interval_idx.line_idx.x == 0 && interval_idx.line_idx.y == 5)
   {
     atlas_texel = vec4(0.0f, 1.0f, 0.0f, 1.0f);
   }else
@@ -734,23 +731,23 @@ void SceneShader(uvec2 size, out vec4 radiance)
 {{
   struct IntervalIdx
   {
-    ivec2 probe_idx;
+    ivec2 block_idx;
     ivec2 line_idx;
   };
 
-  IntervalIdx AtlasTexelIdxToIntervalIdx(ivec2 atlas_texel_idx, uint probe_points_count)
+  IntervalIdx AtlasTexelIdxToIntervalIdx(ivec2 atlas_texel_idx, uint block_lines_count2)
   {
-    uvec2 block_size = uvec2(probe_points_count);
+    uvec2 block_size = uvec2(block_lines_count2);
     IntervalIdx interval_idx;
-    interval_idx.probe_idx = atlas_texel_idx / int(block_size);
+    interval_idx.block_idx = atlas_texel_idx / int(block_size);
     interval_idx.line_idx = atlas_texel_idx % int(block_size);
     return interval_idx;
   }
 
-  ivec2 IntervalIdxToAtlasTexelIdx(ivec2 probe_idx, ivec2 line_idx, uint probe_points_count)
+  ivec2 IntervalIdxToAtlasTexelIdx(ivec2 block_idx, ivec2 line_idx, uint block_lines_count2)
   {
-    uvec2 block_size = uvec2(probe_points_count);
-    return ivec2(block_size) * probe_idx + line_idx;
+    uvec2 block_size = uvec2(block_lines_count2);
+    return ivec2(block_size) * block_idx + line_idx;
   }
 
   vec2 GetNormAABBPerimeterPoint(float ratio)
@@ -859,24 +856,24 @@ void SceneShader(uvec2 size, out vec4 radiance)
   #define LinespaceToReal LinespaceToRealAngdist
   #define RealToLinespace RealToLinespaceAngdist
 
-  vec4 IntervalIdxToIntervalPoints(ivec2 probe_idx, ivec2 line_idx, uint probe_points_count, uint probe_spacing)
+  vec4 IntervalIdxToIntervalPoints(ivec2 block_idx, ivec2 line_idx, uint block_lines_count2, uint probe_spacing)
   {
-    vec2 ratio = (vec2(line_idx) + vec2(0.5f)) / float(probe_points_count);
+    vec2 ratio = (vec2(line_idx) + vec2(0.5f)) / float(block_lines_count2);
     vec4 norm_points = LinespaceToReal(ratio);
-    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
+    vec4 probe_minmax = vec4(vec2(block_idx), vec2(block_idx + ivec2(1))) * float(probe_spacing);
     return vec4(
       probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_points.xy,
       probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_points.zw
     );
   }
 
-  vec4 GetProbePointEdge(ivec2 probe_idx, int point_idx, uint probe_points_count, uint probe_spacing)
+  vec4 GetProbePointEdge(ivec2 block_idx, int point_idx, uint block_lines_count2, uint probe_spacing)
   {
-    vec2 edge_ratio = vec2(point_idx, point_idx + 1) / float(probe_points_count);
+    vec2 edge_ratio = vec2(point_idx, point_idx + 1) / float(block_lines_count2);
 
     vec4 norm_edge_points = LinespaceToReal(edge_ratio);
 
-    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
+    vec4 probe_minmax = vec4(vec2(block_idx), vec2(block_idx + ivec2(1))) * float(probe_spacing);
     return vec4(
       probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_edge_points.xy,
       probe_minmax.xy + (probe_minmax.zw - probe_minmax.xy) * norm_edge_points.zw
@@ -888,15 +885,15 @@ void SceneShader(uvec2 size, out vec4 radiance)
     bool is_hit;
     vec2 line_idxf;
   };
-  ProbeHit RayToPointIdsf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, uint probe_points_count, uint probe_spacing)
+  ProbeHit RayToPointIdsf(ivec2 block_idx, vec2 ray_origin, vec2 ray_dir, uint block_lines_count2, uint probe_spacing)
   {
-    vec4 probe_minmax = vec4(vec2(probe_idx), vec2(probe_idx + ivec2(1))) * float(probe_spacing);
+    vec4 probe_minmax = vec4(vec2(block_idx), vec2(block_idx + ivec2(1))) * float(probe_spacing);
     vec2 norm_ray_origin = (ray_origin - probe_minmax.xy) / float(probe_spacing);
     vec2 norm_ray_end = (ray_origin + ray_dir - probe_minmax.xy) / float(probe_spacing);
 
     ProbeHit probe_hit;
     vec2 norm_linespace = RealToLinespace(vec4(norm_ray_origin, norm_ray_end));
-    probe_hit.line_idxf = norm_linespace * float(probe_points_count) - vec2(0.5f);
+    probe_hit.line_idxf = norm_linespace * float(block_lines_count2) - vec2(0.5f);
     probe_hit.is_hit = norm_linespace.x >= 0.0f;
 
     return probe_hit;
