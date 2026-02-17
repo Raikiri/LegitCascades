@@ -291,7 +291,7 @@
     return ray;
   }
   
-  vec2 RayToLineCoord(vec2 origin, vec2 dir)
+  vec2 RayToLineCoord3(vec2 origin, vec2 dir)
   {
     vec2 perp = normalize(vec2(-dir.y, dir.x));
 
@@ -300,7 +300,7 @@
   }
 
 
-  Ray LineCoordToRay(vec2 line_coord)
+  Ray LineCoordToRay3(vec2 line_coord)
   {
     vec2 ang = line_coord * pi * 2.0f;
     Ray ray;
@@ -313,6 +313,35 @@
     //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
     
     return ray;
+  }
+
+  vec2 GetCirclePoint(float ratio)
+  {
+    float ang = ratio * 2.0f * pi;
+    return vec2(cos(ang), sin(ang)) * sqrt(2.0f) / 2.0f;
+  }
+
+  Ray LineCoordToRay(vec2 line_coord)
+  {
+    float start_quadrantf = line_coord.x * 4.0f;
+    float end_quadrantf = line_coord.y * 3.0f;
+    vec2 p0 = GetCirclePoint(line_coord.x);
+    vec2 p1 = GetCirclePoint(fract((floor(start_quadrantf) + 1.0f) / 4.0f + line_coord.y * 3.0f / 4.0f));
+    //vec2 p1 = GetCirclePoint(line_coord.y);
+    
+    Ray ray;
+    ray.origin = p0;
+    ray.dir = p1 - p0;
+    
+    return ray;
+  }
+  
+  vec2 RayToLineCoord(vec2 origin, vec2 dir)
+  {
+    vec2 perp = normalize(vec2(-dir.y, dir.x));
+
+    float ang = atan(dir.y, dir.x);
+    return vec2(fract(ang / (pi * 2.0f)), dot(perp, origin - vec2(0.5f)) / sqrt(2.0f) + 0.5f);
   }
 }}
 
