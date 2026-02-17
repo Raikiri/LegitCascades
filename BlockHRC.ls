@@ -150,8 +150,8 @@
   {
     float start_quadrant = floor(line_coord.x * 4.0f);
     vec2 p0 = GetCirclePoint(line_coord.x);
-    vec2 p1 = GetCirclePoint(fract((start_quadrant + 1.0f) / 4.0f + line_coord.y * 3.0f / 4.0f));
-    //vec2 p1 = GetCirclePoint(line_coord.y);
+    //vec2 p1 = GetCirclePoint(fract((start_quadrant + 1.0f) / 4.0f + line_coord.y * 3.0f / 4.0f));
+    vec2 p1 = GetCirclePoint(line_coord.y);
     
     Ray ray;
     ray.origin = p0;
@@ -169,8 +169,10 @@
       vec2 p1 = origin + dir * t.y;
       vec2 line_coord;
       line_coord.x = GetCircleRatio(p0);
-      float start_quadrant = floor(line_coord.x * 4.0f);
-      line_coord.y = fract((GetCircleRatio(p1) - (start_quadrant + 1.0f) / 4.0f)) * 4.0f / 3.0f;
+      line_coord.y = GetCircleRatio(p1);
+
+      //float start_quadrant = floor(line_coord.x * 4.0f);
+      //line_coord.y = fract((GetCircleRatio(p1) - (start_quadrant + 1.0f) / 4.0f)) * 4.0f / 3.0f;
       return line_coord;
     }else
     {
@@ -187,7 +189,8 @@
     if(t.x < 1e7f)
     {
       vec2 p1 = p0 + norm_ray_dir * t.y;
-      return fract((GetCircleRatio(p1) - (start_quadrant + 1.0f) / 4.0f)) * 4.0f / 3.0f;
+      return GetCircleRatio(p1);
+      //return fract((GetCircleRatio(p1) - (start_quadrant + 1.0f) / 4.0f)) * 4.0f / 3.0f;
     }else
     {
       return -1.0f;
@@ -285,36 +288,48 @@ void ExtendCascade(
 
   color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 
-  Ray dst_ray = LineIdxfToRay(dst_interval_idx.block_idx, vec2(dst_interval_idx.line_idx), dst_probe_points_count, dst_probe_spacing);
-  for(uint y_offset = 0u; y_offset < 2u; y_offset++)
+  vec2 ratio;
+  float step_size = 0.1f;
+  for(ratio.y = 0.0f; ratio.y < 1.0f; ratio.y += step_size)
   {
-    for(uint x_offset = 0u; x_offset < 2u; x_offset++)
+    for(ratio.x = 0.0f; ratio.x < 1.0f; ratio.x += step_size)
     {
-      //ivec2 src_probe_idx = ivec2(4, 3);
-      ivec2 src_probe_idx = dst_interval_idx.block_idx * 2 + ivec2(x_offset, y_offset);  
-      vec2 src_line_idx = RayToLineIdxf(src_probe_idx, dst_ray.origin, dst_ray.dir, src_probe_points_count, src_probe_spacing);
-      //vec2 test_dst_line_idx = RayToLineIdxf(dst_interval_idx.block_idx, dst_ray.origin, dst_ray.dir, dst_probe_points_count, dst_probe_spacing);
-
-      //if(abs(float(dst_interval_idx.line_idx.x) - 1.0f) < 5.01f)
-      //if(dst_interval_idx.line_idx.x == 2 && dst_interval_idx.line_idx.y == 13)
-      vec4 src_probe_minmax = vec4(vec2(src_probe_idx), vec2(src_probe_idx + ivec2(1))) * float(src_probe_spacing);
-
-      vec2 src_probe_t;
-      bool src_probe_hit = RayAABBIntersect(src_probe_minmax, dst_ray.origin, dst_ray.dir, src_probe_t.x, src_probe_t.y);
-      //if(src_line_idx.y < 1e7f)
-      if(src_probe_hit)
-      //if(length(test_dst_line_idx - vec2(dst_interval_idx.line_idx)) < 0.01f)
-      //if(test_dst_line_idx.x < 1e7f)
-      //if(length(dst_ray.dir) != 0.0f)
+      Ray dst_ray = LineIdxfToRay(dst_interval_idx.block_idx, vec2(dst_interval_idx.line_idx) - vec2(0.5f) + ratio, dst_probe_points_count, dst_probe_spacing);
+      for(uint y_offset = 0u; y_offset < 2u; y_offset++)
       {
-        BilinearSamples bilinear_samples = GetBilinearSamples(src_line_idx);
-        vec4 weights = GetBilinearWeights(bilinear_samples.ratio);
-        for(uint sample_idx = 0u; sample_idx < 4u; sample_idx++)
+        for(uint x_offset = 0u; x_offset < 2u; x_offset++)
         {
-          ivec2 src_line_idx = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx) + ivec2(src_probe_points_count)) % ivec2(src_probe_points_count);
-          ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx.xy, src_probe_points_count);
+          //ivec2 src_probe_idx = ivec2(4, 3);
+          ivec2 src_probe_idx = dst_interval_idx.block_idx * 2 + ivec2(x_offset, y_offset);  
+          vec2 src_line_idx = RayToLineIdxf(src_probe_idx, dst_ray.origin, dst_ray.dir, src_probe_points_count, src_probe_spacing);
+          //vec2 test_dst_line_idx = RayToLineIdxf(dst_interval_idx.block_idx, dst_ray.origin, dst_ray.dir, dst_probe_points_count, dst_probe_spacing);
 
-          color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * weights[sample_idx];
+          //if(abs(float(dst_interval_idx.line_idx.x) - 1.0f) < 5.01f)
+          //if(dst_interval_idx.line_idx.x == 2 && dst_interval_idx.line_idx.y == 13)
+          vec4 src_probe_minmax = vec4(vec2(src_probe_idx), vec2(src_probe_idx + ivec2(1))) * float(src_probe_spacing);
+
+          vec2 src_probe_t;
+          bool src_probe_hit = RayAABBIntersect(src_probe_minmax, dst_ray.origin, dst_ray.dir, src_probe_t.x, src_probe_t.y);
+          //if(src_line_idx.y < 1e7f)
+          if(src_probe_hit)
+          //if(length(test_dst_line_idx - vec2(dst_interval_idx.line_idx)) < 0.01f)
+          //if(test_dst_line_idx.x < 1e7f)
+          //if(length(dst_ray.dir) != 0.0f)
+          {
+            BilinearSamples bilinear_samples = GetBilinearSamples(src_line_idx);
+            vec4 weights = GetBilinearWeights(bilinear_samples.ratio);
+            for(uint sample_idx = 0u; sample_idx < 4u; sample_idx++)
+            {
+              ivec2 src_line_idx = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx) + ivec2(src_probe_points_count)) % ivec2(src_probe_points_count);
+              //ivec2 src_line_idx = bilinear_samples.base_idx + GetBilinearOffset(sample_idx);
+              //if(src_line_idx.x >= 0 && src_line_idx.y >= 0 && src_line_idx.x < int(src_probe_points_count) && src_line_idx.y < int(src_probe_points_count))
+              {
+                ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx.xy, src_probe_points_count);
+
+                color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * weights[sample_idx] * (step_size * step_size);
+              }
+            }
+          }
         }
       }
     }
