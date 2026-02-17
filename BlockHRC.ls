@@ -126,207 +126,31 @@
 [declaration: "linespaces"]
 [include: "geometry_utils"]
 {{
-  
-  vec2 GetNormAABBPerimeterPoint(float ratio)
-  {
-    float perimeter_coord = ratio * 4.0f;
-    int side_idx = int(floor(perimeter_coord)) % 4;
-    float side_ratio = fract(perimeter_coord);
-
-    if(side_idx == 0) return vec2(side_ratio, 0.0f);
-    if(side_idx == 1) return vec2(1.0f, side_ratio);
-    if(side_idx == 2) return vec2(1.0f - side_ratio, 1.0f);
-    return vec2(0.0f, 1.0f - side_ratio);
-  }
-
-  float GetNormAAABBPerimeterRatio(vec2 point)
-  {
-    float eps = 1e-2f;
-    if(point.y < eps)
-      return (point.x + 0.0f) / 4.0f;
-    if(point.x > 1.0f - eps)
-      return (point.y + 1.0f) / 4.0f;
-    if(point.y > 1.0f - eps)
-      return ((1.0f - point.x) + 2.0f) / 4.0f;
-    return ((1.0f - point.y) + 3.0f) / 4.0f;
-  }
-
-
-  const vec2 norm_circle_center = vec2(0.5f, 0.5f);
-  const float norm_circle_radius = sqrt(2.0f) / 2.0f;
-
-  vec2 GetNormCirclePoint(float ratio)
-  {
-    float ang = fract(ratio) * 2.0f * 3.141592f;
-    return norm_circle_center + vec2(cos(ang), sin(ang)) * norm_circle_radius;
-  }
-
-  float GetNormCircleRatio(vec2 circle_point)
-  {
-    vec2 delta = circle_point - norm_circle_center;
-    float ang = atan(delta.y, delta.x);
-    return fract(ang / (2.0f * 3.141592f));
-  }
-
-  vec2 RealToLinespaceAABB(vec4 norm_edge)
-  {
-    vec2 norm_dir = norm_edge.zw - norm_edge.xy;
-    vec2 t;
-    bool is_hit = RayAABBIntersect(vec4(0.0f, 0.0f, 1.0f, 1.0f), norm_edge.xy, norm_dir, t.x, t.y);
-    vec4 norm_inter_edge;
-    norm_inter_edge.xy = norm_edge.xy + norm_dir * t.x;
-    norm_inter_edge.zw = norm_edge.xy + norm_dir * t.y;
-    vec2 linespace = vec2(GetNormAAABBPerimeterRatio(norm_inter_edge.xy), GetNormAAABBPerimeterRatio(norm_inter_edge.zw));
-    if(!is_hit)
-      linespace = vec2(-1.0f);
-    return linespace;
-  }
-  vec4 LinespaceToRealAABB(vec2 line_coords)
-  {
-    return vec4(GetNormAABBPerimeterPoint(line_coords.x), GetNormAABBPerimeterPoint(line_coords.y));
-    //return vec4(GetNormCirclePoint(line_coords.x), GetNormCirclePoint(line_coords.y));
-  }
-
-  vec2 RealToLinespaceCircle(vec4 norm_edge)
-  {
-    vec2 norm_dir = norm_edge.zw - norm_edge.xy;
-    vec2 t = RaySphereIntersect(norm_edge.xy, norm_dir, norm_circle_center, norm_circle_radius);
-    bool is_hit = t.x < 1e5f;
-
-    vec4 norm_inter_edge;
-    norm_inter_edge.xy = norm_edge.xy + norm_dir * t.x;
-    norm_inter_edge.zw = norm_edge.xy + norm_dir * t.y;
-    vec2 linespace = vec2(GetNormCircleRatio(norm_inter_edge.xy), GetNormCircleRatio(norm_inter_edge.zw));
-    if(!is_hit)
-      linespace = vec2(-1.0f);
-    return linespace;
-  }
-
-  vec4 LinespaceToRealCircle(vec2 line_coords)
-  {
-    //return vec4(GetNormAABBPerimeterPoint(line_coords.x), GetNormAABBPerimeterPoint(line_coords.y));
-    return vec4(GetNormCirclePoint(line_coords.x), GetNormCirclePoint(line_coords.y));
-  }
-
-  vec2 RealToLinespaceAngdist(vec4 norm_edge)
-  {
-    vec2 norm_dir = norm_edge.zw - norm_edge.xy;
-    vec2 norm_perp = normalize(vec2(-norm_dir.y, norm_dir.x));
-
-    float ang = atan(norm_dir.y, norm_dir.x);
-    return vec2(fract(ang / (pi * 2.0f)), dot(norm_perp, norm_edge.xy - vec2(0.5f)) + 0.5f);
-  }
-
-  vec4 LinespaceToRealAngdist(vec2 line_coords)
-  {
-    float ang = line_coords.x * pi * 2.0f;
-    vec2 dir = vec2(cos(ang), sin(ang));
-    vec2 perp = vec2(-dir.y, dir.x);
-    vec2 origin = vec2(0.5f) + perp * (line_coords.y - 0.5f);
-    return vec4(origin - dir * 0.0f, origin + dir * 1.0f);
-  }
-
   struct Ray
   {
     vec2 origin;
     vec2 dir;
   };
 
-  Ray LineCoordToRay1(vec2 line_coord)
-  {
-    float ang = line_coord.x * pi * 1.0f;
-    
-    Ray ray;
-    ray.dir = vec2(cos(ang), sin(ang));
-    vec2 perp = vec2(-ray.dir.y, ray.dir.x);
-    ray.origin = vec2(0.5f) + perp * (line_coord.y - 0.5f) * sqrt(2.0f);
-    
-    return ray;
-  }
-  
-  vec2 RayToLineCoord1(vec2 origin, vec2 dir)
-  {
-    vec2 perp = normalize(vec2(-dir.y, dir.x));
-
-    float ang = atan(dir.y, dir.x);
-    return vec2(fract(ang / (pi * 2.0f)), dot(perp, origin - vec2(0.5f)) / sqrt(2.0f) + 0.5f);
-  }
-
-  vec2 GetBlockPerimeterPoint(float ratio)
-  {
-    float perimeter_coord = ratio * 4.0f;
-    int side_idx = int(floor(perimeter_coord)) % 4;
-    float side_ratio = fract(perimeter_coord);
-
-    if(side_idx == 0) return vec2(side_ratio, 0.0f);
-    if(side_idx == 1) return vec2(1.0f, side_ratio);
-    if(side_idx == 2) return vec2(1.0f - side_ratio, 1.0f);
-    return vec2(0.0f, 1.0f - side_ratio);
-  }
-
-  float GetBlockPerimeterRatio(vec2 point)
-  {
-    float eps = 1e-2f;
-    if(point.y < eps)
-      return (point.x + 0.0f) / 4.0f;
-    if(point.x > 1.0f - eps)
-      return (point.y + 1.0f) / 4.0f;
-    if(point.y > 1.0f - eps)
-      return ((1.0f - point.x) + 2.0f) / 4.0f;
-    return ((1.0f - point.y) + 3.0f) / 4.0f;
-  }
-
-
-  Ray LineCoordToRay2(vec2 line_coord)
-  {
-    Ray ray;
-    ray.origin = GetBlockPerimeterPoint(line_coord.x);
-    ray.dir = GetBlockPerimeterPoint(ceil(line_coord.x * 4.0f) * 0.25f + 0.75f * line_coord.y) - ray.origin;
-    //ray.origin = vec2(line_coord.x, 0.0);
-    //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
-    //ray.dir = vec2(2.0f * line_coord.y - 1.0f, 1.0f);
-    //ray.origin = vec2(line_coord.x);
-    //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
-    
-    return ray;
-  }
-  
-  vec2 RayToLineCoord3(vec2 origin, vec2 dir)
-  {
-    vec2 perp = normalize(vec2(-dir.y, dir.x));
-
-    float ang = atan(dir.y, dir.x);
-    return vec2(fract(ang / (pi * 2.0f)), dot(perp, origin - vec2(0.5f)) / sqrt(2.0f) + 0.5f);
-  }
-
-
-  Ray LineCoordToRay3(vec2 line_coord)
-  {
-    vec2 ang = line_coord * pi * 2.0f;
-    Ray ray;
-    ray.origin = vec2(cos(ang.x), sin(ang.x)) * sqrt(2.0f) / 2.0f + vec2(0.5f);
-    ray.dir = vec2(cos(ang.y), sin(ang.y)) * sqrt(2.0f) / 2.0f + vec2(0.5f) - ray.origin;
-    //ray.origin = vec2(line_coord.x, 0.0);
-    //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
-    //ray.dir = vec2(2.0f * line_coord.y - 1.0f, 1.0f);
-    //ray.origin = vec2(line_coord.x);
-    //ray.dir = vec2(line_coord.y * 2.0f - 1.0f, 1.0f);
-    
-    return ray;
-  }
 
   vec2 GetCirclePoint(float ratio)
   {
     float ang = ratio * 2.0f * pi;
-    return vec2(cos(ang), sin(ang)) * sqrt(2.0f) / 2.0f;
+    return vec2(0.5f) + vec2(cos(ang), sin(ang)) * sqrt(2.0f) / 2.0f;
+  }
+
+  float GetCircleRatio(vec2 point)
+  {
+    vec2 delta = point - vec2(0.5f);
+    float ang = atan(delta.y, delta.x);
+    return fract(ang / (2.0f * pi));
   }
 
   Ray LineCoordToRay(vec2 line_coord)
   {
-    float start_quadrantf = line_coord.x * 4.0f;
-    float end_quadrantf = line_coord.y * 3.0f;
+    float start_quadrant = floor(line_coord.x * 4.0f);
     vec2 p0 = GetCirclePoint(line_coord.x);
-    vec2 p1 = GetCirclePoint(fract((floor(start_quadrantf) + 1.0f) / 4.0f + line_coord.y * 3.0f / 4.0f));
+    vec2 p1 = GetCirclePoint(fract((start_quadrant + 1.0f) / 4.0f + line_coord.y * 3.0f / 4.0f));
     //vec2 p1 = GetCirclePoint(line_coord.y);
     
     Ray ray;
@@ -335,13 +159,39 @@
     
     return ray;
   }
-  
+
   vec2 RayToLineCoord(vec2 origin, vec2 dir)
   {
-    vec2 perp = normalize(vec2(-dir.y, dir.x));
+    vec2 t = RaySphereIntersect(origin, dir, vec2(0.5f), sqrt(2.0f) / 2.0f);
+    if(t.x < 1e7f)
+    {
+      vec2 p0 = origin + dir * t.x;
+      vec2 p1 = origin + dir * t.y;
+      vec2 line_coord;
+      line_coord.x = GetCircleRatio(p0);
+      float start_quadrant = floor(line_coord.x * 4.0f);
+      line_coord.y = fract((GetCircleRatio(p1) - (start_quadrant + 1.0f) / 4.0f)) * 4.0f / 3.0f;
+      return line_coord;
+    }else
+    {
+      return vec2(1e7f);
+    }
+  }
 
-    float ang = atan(dir.y, dir.x);
-    return vec2(fract(ang / (pi * 2.0f)), dot(perp, origin - vec2(0.5f)) / sqrt(2.0f) + 0.5f);
+  float FindLineCoordY(vec2 norm_ray_point, float line_coord_x)
+  {
+    float start_quadrant = floor(line_coord_x * 4.0f);
+    vec2 p0 = GetCirclePoint(line_coord_x);
+    vec2 norm_ray_dir = norm_ray_point - p0;
+    vec2 t = RaySphereIntersect(p0, norm_ray_dir, vec2(0.5f), sqrt(2.0f) / 2.0f);
+    if(t.x < 1e7f)
+    {
+      vec2 p1 = p0 + norm_ray_dir * t.y;
+      return fract((GetCircleRatio(p1) - (start_quadrant + 1.0f) / 4.0f)) * 4.0f / 3.0f;
+    }else
+    {
+      return -1.0f;
+    }
   }
 }}
 
@@ -388,7 +238,18 @@
     norm_ray.origin = (ray_origin - probe_minmax.xy) / float(probe_spacing);
     norm_ray.dir = ray_dir;
 
-    return RayToLineCoord(norm_ray.origin, norm_ray.dir) * float(block_lines_count2) - vec2(0.5f);
+    vec2 line_coord = RayToLineCoord(norm_ray.origin, norm_ray.dir);
+    if(line_coord.x < 1e7f)
+      return line_coord * float(block_lines_count2) - vec2(0.5f);
+    else
+      return vec2(1e7f);
+  }
+
+  float FindLineIdxY(ivec2 block_idx, float line_idx_x, vec2 ray_point, uint block_lines_count2, uint probe_spacing)
+  {
+    vec4 probe_minmax = vec4(vec2(block_idx), vec2(block_idx + ivec2(1))) * float(probe_spacing);
+    vec2 norm_ray_point = (ray_point - probe_minmax.xy) / float(probe_spacing);
+    return FindLineCoordY(norm_ray_point, (line_idx_x + 0.5f) / float(block_lines_count2)) * float(block_lines_count2) - 0.5f;
   }
 
   uint GetProbeSpacing(uint c0_probe_spacing, uint cascade_idx)
@@ -402,7 +263,7 @@
 }}
 
 
-[include: "pcg", "block_probe_layout", "hrc_basis", "bilinear_interpolation"]
+[include: "pcg", "block_probe_layout2", "hrc_basis", "bilinear_interpolation"]
 void ExtendCascade(
   uint c0_probe_spacing,
   uint c0_probe_points_count,
@@ -422,50 +283,38 @@ void ExtendCascade(
   ivec2 dst_atlas_texel = ivec2(gl_FragCoord.xy);
   IntervalIdx dst_interval_idx = AtlasTexelIdxToIntervalIdx(dst_atlas_texel, dst_probe_points_count);
 
-  vec4 dst_edge0 = GetProbePointEdge(dst_interval_idx.block_idx, dst_interval_idx.line_idx.x, dst_probe_points_count, dst_probe_spacing);
-  vec4 dst_edge1 = GetProbePointEdge(dst_interval_idx.block_idx, dst_interval_idx.line_idx.y, dst_probe_points_count, dst_probe_spacing);
-
-
-
   color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 
-  vec2 midpoint0 = mix(dst_edge0.xy, dst_edge0.zw, 0.5f);
-  vec2 midpoint1 = mix(dst_edge1.xy, dst_edge1.zw, 0.5f);
-
-  /*for(uint y_offset = 0u; y_offset < 2u; y_offset++)
-  {
-    for(uint x_offset = 0u; x_offset < 2u; x_offset++)
-    {
-      //ivec2 src_probe_idx = ivec2(4, 3);
-      ivec2 src_probe_idx = dst_interval_idx.block_idx * 2 + ivec2(x_offset, y_offset);  
-      ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
-      if(src_probe_hit.is_hit)
-      {
-        ivec2 src_line_idx = ivec2(floor(src_probe_hit.line_idxf));
-        ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx.xy, src_probe_points_count);
-
-        color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * 0.5f;
-      }
-    }
-  }*/
-
+  Ray dst_ray = LineIdxfToRay(dst_interval_idx.block_idx, vec2(dst_interval_idx.line_idx), dst_probe_points_count, dst_probe_spacing);
   for(uint y_offset = 0u; y_offset < 2u; y_offset++)
   {
     for(uint x_offset = 0u; x_offset < 2u; x_offset++)
     {
       //ivec2 src_probe_idx = ivec2(4, 3);
       ivec2 src_probe_idx = dst_interval_idx.block_idx * 2 + ivec2(x_offset, y_offset);  
-      ProbeHit src_probe_hit = RayToPointIdsf(src_probe_idx, midpoint0, normalize(midpoint1 - midpoint0), src_probe_points_count, src_probe_spacing);
-      if(src_probe_hit.is_hit)
+      vec2 src_line_idx = RayToLineIdxf(src_probe_idx, dst_ray.origin, dst_ray.dir, src_probe_points_count, src_probe_spacing);
+      //vec2 test_dst_line_idx = RayToLineIdxf(dst_interval_idx.block_idx, dst_ray.origin, dst_ray.dir, dst_probe_points_count, dst_probe_spacing);
+
+      //if(abs(float(dst_interval_idx.line_idx.x) - 1.0f) < 5.01f)
+      //if(dst_interval_idx.line_idx.x == 2 && dst_interval_idx.line_idx.y == 13)
+      vec4 src_probe_minmax = vec4(vec2(src_probe_idx), vec2(src_probe_idx + ivec2(1))) * float(src_probe_spacing);
+
+      vec2 src_probe_t;
+      bool src_probe_hit = RayAABBIntersect(src_probe_minmax, dst_ray.origin, dst_ray.dir, src_probe_t.x, src_probe_t.y);
+      //if(src_line_idx.y < 1e7f)
+      if(src_probe_hit)
+      //if(length(test_dst_line_idx - vec2(dst_interval_idx.line_idx)) < 0.01f)
+      //if(test_dst_line_idx.x < 1e7f)
+      //if(length(dst_ray.dir) != 0.0f)
       {
-        BilinearSamples bilinear_samples = GetBilinearSamples(src_probe_hit.line_idxf);
+        BilinearSamples bilinear_samples = GetBilinearSamples(src_line_idx);
         vec4 weights = GetBilinearWeights(bilinear_samples.ratio);
         for(uint sample_idx = 0u; sample_idx < 4u; sample_idx++)
         {
           ivec2 src_line_idx = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx) + ivec2(src_probe_points_count)) % ivec2(src_probe_points_count);
           ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx.xy, src_probe_points_count);
 
-          color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * 0.5f * weights[sample_idx];
+          color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * weights[sample_idx];
         }
       }
     }
@@ -526,7 +375,7 @@ void FinalGatheringShader(
   ivec2 block_idx = ivec2(floor(probe_idxf));
   //ivec2 block_idx = ivec2(7, 5) / int(1u << cascade_idx);
 
-  vec4 pixel_aabb = vec4(pixel_pos - vec2(4.5f), pixel_pos + vec2(4.5f));
+  vec4 pixel_aabb = vec4(pixel_pos - vec2(0.5f), pixel_pos + vec2(0.5f));
 
   /*color = vec4(0.0f);
   for(uint point_idx0 = 0u; point_idx0 < block_lines_count2 * 4u; point_idx0++)
@@ -556,33 +405,34 @@ void FinalGatheringShader(
     //vec4 base_edge = GetProbePointEdge(block_idx, int(point_idx0), block_lines_count2, probe_spacing);
     //vec2 base_midpoint = mix(base_edge.xy, base_edge.zw, 0.5f);
     //ProbeHit src_probe_hit = RayToPointIdsf(block_idx, base_midpoint, normalize(pixel_pos - base_midpoint), block_lines_count2, probe_spacing);
-    for(line_idx.y = 0u; line_idx.y < block_lines_count2; line_idx.y++)
+    //for(line_idx.y = 0u; line_idx.y < block_lines_count2; line_idx.y++)
+    float line_idx_yf = FindLineIdxY(block_idx, float(line_idx.x), pixel_pos, block_lines_count2, probe_spacing);
+    line_idx.y = uint(round(line_idx_yf));
     {
       //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(block_lines_count2)) % ivec2(block_lines_count2);
       //color += vec4(0.1f);
       {
         //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(block_lines_count2)) % ivec2(block_lines_count2);
-        Ray ray = LineIdxfToRay(block_idx, vec2(line_idx), block_lines_count2, probe_spacing);
+        //Ray ray = LineIdxfToRay(block_idx, vec2(line_idx.x, line_idx_yf), block_lines_count2, probe_spacing);
 
         ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(block_idx, ivec2(line_idx), block_lines_count2);
 
-        ivec2 test_probe_idx = ivec2(8, 17);
-        vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
+        //ivec2 test_probe_idx = ivec2(8, 17);
+        //vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
 
-        vec2 t;
-        bool light_aabb_hit = RayAABBIntersect(test_aabb, ray.origin, normalize(ray.dir), t.x, t.y);
+        /*vec2 t;
         bool pixel_aabb_hit = RayAABBIntersect(pixel_aabb, ray.origin, normalize(ray.dir), t.x, t.y);
         if(pixel_aabb_hit && light_aabb_hit)
         {
-          color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * 5e-3f * (t.y - t.x);
-        }
-
-        /*vec2 t;
-        bool aabb_hit = RayAABBIntersect(pixel_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
-        if(aabb_hit)
-        {
-          color += texelFetch(cascade_atlas, atlas_texel_idx, 0) * (t.y - t.x);
+          color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * 5e-3;
         }*/
+
+        vec2 t;
+        //bool aabb_hit = RayAABBIntersect(pixel_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
+        //if(aabb_hit)
+        {
+          color += texelFetch(cascade_atlas, atlas_texel_idx, 0);// * (t.y - t.x);
+        }
       }
     }
   }
@@ -620,7 +470,7 @@ void SetCascade(
   IntervalIdx interval_idx = AtlasTexelIdxToIntervalIdx(atlas_texel_idx, block_lines_count2);
   atlas_texel = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-  if((interval_idx.block_idx.x == 30) && (interval_idx.block_idx.y == 40))
+  if((interval_idx.block_idx.x == 32) && (interval_idx.block_idx.y == 47))
   //if(length(vec2(interval_idx.block_idx) - vec2(160.0f, 50.0f)) < 2.0f)
   {
     atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.1f;
@@ -650,7 +500,7 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 20;
+  uint c0_probe_spacing = 3;
   uint c0_probe_points_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
@@ -1001,3 +851,4 @@ void SceneShader(uvec2 size, out vec4 radiance)
     return c0_probe_points_count << cascade_idx;
   }
 }}
+
