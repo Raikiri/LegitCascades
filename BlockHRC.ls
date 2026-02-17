@@ -146,6 +146,7 @@
     return fract(ang / (2.0f * pi));
   }
 
+  //try torus of lines?
   Ray LineCoordToRay(vec2 line_coord)
   {
     float start_quadrant = floor(line_coord.x * 4.0f);
