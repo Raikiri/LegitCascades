@@ -204,6 +204,11 @@
       return -1.0f;
     }
   }
+
+  float GetLineWeight(vec2 line_coord)
+  {
+    return 1.0f;
+  }
 }}
 
 
@@ -393,14 +398,20 @@ void ExtendCascade(
   IntervalIdx dst_interval_idx = AtlasTexelIdxToIntervalIdx(dst_atlas_texel, dst_probe_points_count);
 
   color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+  float total_weight = 0.0f;
 
   vec2 ratio;
-  float step_size = 0.5f;
-  for(ratio.y = 0.0f; ratio.y < 1.0f; ratio.y += step_size)
+  uint steps_count = 4u;
+  uvec2 step_idx;
+  for(step_idx.y = 0u; step_idx.y < steps_count; step_idx.y++)
   {
-    for(ratio.x = 0.0f; ratio.x < 1.0f; ratio.x += step_size)
+    for(step_idx.x = 0u; step_idx.x < steps_count; step_idx.x++)
     {
-      Ray dst_ray = LineIdxfToRay(dst_interval_idx.block_idx, vec2(dst_interval_idx.line_idx) - vec2(0.5f) + ratio, dst_probe_points_count, dst_probe_spacing);
+      vec2 ratio = (vec2(step_idx) + vec2(0.5f)) / float(steps_count);
+      float weight = 1.0f;//GetLineIdxfWeight(dst_interval_idx.block_idx, dst_line_idx, dst_probe_points_count, dst_probe_spacing);
+      total_weight += weight;
+      vec2 dst_line_idx = vec2(dst_interval_idx.line_idx) - vec2(0.5f) + ratio;
+      Ray dst_ray = LineIdxfToRay(dst_interval_idx.block_idx, dst_line_idx, dst_probe_points_count, dst_probe_spacing);
       for(uint y_offset = 0u; y_offset < 2u; y_offset++)
       {
         for(uint x_offset = 0u; x_offset < 2u; x_offset++)
@@ -408,6 +419,10 @@ void ExtendCascade(
           //ivec2 src_probe_idx = ivec2(4, 3);
           ivec2 src_probe_idx = dst_interval_idx.block_idx * 2 + ivec2(x_offset, y_offset);  
           vec2 src_line_idx = RayToLineIdxf(src_probe_idx, dst_ray.origin, dst_ray.dir, src_probe_points_count, src_probe_spacing);
+
+          //float weight = GetLineIdxfWeight(src_probe_idx, src_line_idx, src_probe_points_count, src_probe_spacing);
+          //total_weight += weight / 4.0f;
+
           //vec2 test_dst_line_idx = RayToLineIdxf(dst_interval_idx.block_idx, dst_ray.origin, dst_ray.dir, dst_probe_points_count, dst_probe_spacing);
 
           //if(abs(float(dst_interval_idx.line_idx.x) - 1.0f) < 5.01f)
@@ -431,8 +446,7 @@ void ExtendCascade(
               //if(src_line_idx.x >= 0 && src_line_idx.y >= 0 && src_line_idx.x < int(src_probe_points_count) && src_line_idx.y < int(src_probe_points_count))
               {
                 ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx.xy, src_probe_points_count);
-
-                color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * weights[sample_idx] * (step_size * step_size);
+                color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * weights[sample_idx] * weight;
               }
             }
           }
@@ -440,6 +454,7 @@ void ExtendCascade(
       }
     }
   }
+  color /= total_weight;
 
   //if(dst_interval_idx.line_idx.y == 6 && dst_interval_idx.line_idx.x == 3) color += vec4(0.0f, 1.0f, 0.0f, 0.0f);
 
@@ -541,6 +556,8 @@ void FinalGatheringShader(
         ivec2 test_probe_idx = ivec2(83, 170);
         vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
 
+        float weight = GetLineIdxfWeight(block_idx, vec2(float(line_idx.x), line_idx_yf), block_lines_count2, probe_spacing);
+        /*
         vec2 t;
         bool pixel_aabb_hit = RayAABBIntersect(pixel_aabb, ray.origin, normalize(ray.dir), t.x, t.y);
         bool light_aabb_hit = RayAABBIntersect(test_aabb, ray.origin, normalize(ray.dir), t.x, t.y);
@@ -555,16 +572,16 @@ void FinalGatheringShader(
           {
             //mult = vec4(1.0f, 0.0f, 0.0f, 1.0f);
           }
-          mult *= GetLineIdxfWeight(block_idx, vec2(float(line_idx.x), line_idx_yf), block_lines_count2, probe_spacing);
+          mult *= weight;
           color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * mult * 5e-3;
-        }
+        }*/
 
         //vec2 t;
         //bool aabb_hit = RayAABBIntersect(pixel_aabb, midpoint0, normalize(midpoint1 - midpoint0), t.x, t.y);
         //if(aabb_hit)
-        /*{
-          color += texelFetch(cascade_atlas, atlas_texel_idx, 0);// * (t.y - t.x);
-        }*/
+        {
+          color += texelFetch(cascade_atlas, atlas_texel_idx, 0) * 0.1f;// * (t.y - t.x);
+        }
       }
     }
   }
@@ -602,7 +619,7 @@ void SetCascade(
   IntervalIdx interval_idx = AtlasTexelIdxToIntervalIdx(atlas_texel_idx, block_lines_count2);
   atlas_texel = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-  if((interval_idx.block_idx.x == 32) && (interval_idx.block_idx.y == 47))
+  if((interval_idx.block_idx.x == 6) && (interval_idx.block_idx.y == 4))
   //if(length(vec2(interval_idx.block_idx) - vec2(160.0f, 50.0f)) < 2.0f)
   {
     atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.1f;
@@ -632,7 +649,7 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 1;
+  uint c0_probe_spacing = 30;
   uint c0_probe_points_count = 2;
 
   uint curr_probe_spacing = c0_probe_spacing;
