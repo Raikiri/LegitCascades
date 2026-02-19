@@ -308,8 +308,8 @@
 {{
   Ray LineCoordToRay(vec2 line_coord)
   {
-    vec2 p0 = vec2(line_coord.x, 0.0f);
-    vec2 p1 = vec2(line_coord.x + line_coord.y - 0.5f, 1.0f);
+    vec2 p0 = vec2(-1.0f + line_coord.x * 3.0f, 0.0f);
+    vec2 p1 = vec2(line_coord.x + (line_coord.y - 0.5f) * 2.0f, 1.0f);
 
     Ray ray;
     ray.origin = p0;
@@ -328,17 +328,17 @@
     vec2 p1 = origin + dir * params1.x;
 
     vec2 line_coord;
-    line_coord.x = p0.x;
-    line_coord.y = p1.x - line_coord.x + 0.5f;
+    line_coord.x = (p0.x + 1.0f) / 3.0f;
+    line_coord.y = (p1.x - line_coord.x) / 2.0f + 0.5f;
     return line_coord;
   }
 
   float FindLineCoordY(vec2 norm_ray_point, float line_coord_x)
   {
-    vec2 p0 = vec2(line_coord_x, 0.0f);
+    vec2 p0 = vec2(-1.0f + line_coord_x * 3.0f, 0.0f);
     vec2 params = RayRayIntersect(p0, norm_ray_point - p0, vec2(0.0f, 1.0f), vec2(1.0f, 0.0f));
     vec2 p1 = vec2(params.y, 1.0f);
-    return p1.x - line_coord_x + 0.5f;
+    return (p1.x - line_coord_x) / 2.0f + 0.5f;
   }
 
   float GetLineWeight(vec2 line_coord)
@@ -348,7 +348,7 @@
 }}
 
 [declaration: "block_probe_layout2"]
-[include: "diagonal_linespace"]
+[include: "line_delta_linespace"]
 {{
   struct IntervalIdx
   {
@@ -484,9 +484,9 @@ void ExtendCascade(
             vec4 weights = GetBilinearWeights(round(bilinear_samples.ratio));
             for(uint sample_idx = 0u; sample_idx < 4u; sample_idx++)
             {
-              ivec2 src_line_idx = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx) + ivec2(src_probe_points_count)) % ivec2(src_probe_points_count);
-              //ivec2 src_line_idx = bilinear_samples.base_idx + GetBilinearOffset(sample_idx);
-              //if(src_line_idx.x >= 0 && src_line_idx.y >= 0 && src_line_idx.x < int(src_probe_points_count) && src_line_idx.y < int(src_probe_points_count))
+              //ivec2 src_line_idx = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx) + ivec2(src_probe_points_count)) % ivec2(src_probe_points_count);
+              ivec2 src_line_idx = bilinear_samples.base_idx + GetBilinearOffset(sample_idx);
+              if(src_line_idx.x >= 0 && src_line_idx.y >= 0 && src_line_idx.x < int(src_probe_points_count) && src_line_idx.y < int(src_probe_points_count))
               {
                 ivec2 src_atlas_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, src_line_idx.xy, src_probe_points_count);
                 color += texelFetch(src_cascade_atlas, src_atlas_texel_idx, 0).rgba * weights[sample_idx] * weight;
@@ -587,6 +587,8 @@ void FinalGatheringShader(
     //for(line_idx.y = 0u; line_idx.y < block_lines_count2; line_idx.y++)
     float line_idx_yf = FindLineIdxY(block_idx, float(line_idx.x), pixel_pos, block_lines_count2, probe_spacing);
     line_idx.y = uint(round(line_idx_yf));
+    int t = int(round(line_idx_yf));
+    if(t >= 0 && t < int(block_lines_count2))
     {
       //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(block_lines_count2)) % ivec2(block_lines_count2);
       //color += vec4(0.1f);
@@ -665,7 +667,7 @@ void SetCascade(
   IntervalIdx interval_idx = AtlasTexelIdxToIntervalIdx(atlas_texel_idx, block_lines_count2);
   atlas_texel = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-  if((interval_idx.block_idx.x == 6) && (interval_idx.block_idx.y == 4))
+  if((interval_idx.block_idx.x == 8) && (interval_idx.block_idx.y == 4))
   //if(length(vec2(interval_idx.block_idx) - vec2(160.0f, 50.0f)) < 2.0f)
   {
     atlas_texel = vec4(1.0f, 0.5f, 0.0f, 0.0f) * 0.1f;
