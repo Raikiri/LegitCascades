@@ -303,6 +303,49 @@
 }}
 
 
+[declaration: "line_delta_linespace"]
+[include: "geometry_utils"]
+{{
+  Ray LineCoordToRay(vec2 line_coord)
+  {
+    vec2 p0 = vec2(line_coord.x, 0.0f);
+    vec2 p1 = vec2(line_coord.x + line_coord.y - 0.5f, 1.0f);
+
+    Ray ray;
+    ray.origin = p0;
+    ray.dir = p1 - p0;
+    
+    return ray;
+  }
+
+  vec2 RayToLineCoord(vec2 origin, vec2 dir)
+  {
+    vec2 t;
+    vec2 params0 = RayRayIntersect(origin, dir, vec2(0.0f, 0.0f), vec2(1.0f, 0.0f));
+    vec2 params1 = RayRayIntersect(origin, dir, vec2(0.0f, 1.0f), vec2(1.0f, 0.0f));
+
+    vec2 p0 = origin + dir * params0.x;
+    vec2 p1 = origin + dir * params1.x;
+
+    vec2 line_coord;
+    line_coord.x = p0.x;
+    line_coord.y = p1.x - line_coord.x + 0.5f;
+    return line_coord;
+  }
+
+  float FindLineCoordY(vec2 norm_ray_point, float line_coord_x)
+  {
+    vec2 p0 = vec2(line_coord_x, 0.0f);
+    vec2 params = RayRayIntersect(p0, norm_ray_point - p0, vec2(0.0f, 1.0f), vec2(1.0f, 0.0f));
+    vec2 p1 = vec2(params.y, 1.0f);
+    return p1.x - line_coord_x + 0.5f;
+  }
+
+  float GetLineWeight(vec2 line_coord)
+  {
+    return 1.0f;
+  }
+}}
 
 [declaration: "block_probe_layout2"]
 [include: "diagonal_linespace"]
@@ -401,7 +444,7 @@ void ExtendCascade(
   float total_weight = 0.0f;
 
   vec2 ratio;
-  uint steps_count = 4u;
+  uint steps_count = 1u;
   uvec2 step_idx;
   for(step_idx.y = 0u; step_idx.y < steps_count; step_idx.y++)
   {
@@ -438,7 +481,7 @@ void ExtendCascade(
           //if(length(dst_ray.dir) != 0.0f)
           {
             BilinearSamples bilinear_samples = GetBilinearSamples(src_line_idx);
-            vec4 weights = GetBilinearWeights(bilinear_samples.ratio);
+            vec4 weights = GetBilinearWeights(round(bilinear_samples.ratio));
             for(uint sample_idx = 0u; sample_idx < 4u; sample_idx++)
             {
               ivec2 src_line_idx = (bilinear_samples.base_idx + GetBilinearOffset(sample_idx) + ivec2(src_probe_points_count)) % ivec2(src_probe_points_count);
@@ -549,31 +592,34 @@ void FinalGatheringShader(
       //color += vec4(0.1f);
       {
         //ivec2 line_idx = (ivec2(round(src_probe_hit.line_idxf)) + ivec2(block_lines_count2)) % ivec2(block_lines_count2);
-        Ray ray = LineIdxfToRay(block_idx, vec2(line_idx.x, line_idx.y), block_lines_count2, probe_spacing);
+        //float line_idx_yf = float(line_idx.y);
+        Ray discrete_ray = LineIdxfToRay(block_idx, vec2(line_idx.x, line_idx.y), block_lines_count2, probe_spacing);
+        Ray continuous_ray = LineIdxfToRay(block_idx, vec2(line_idx.x, line_idx_yf), block_lines_count2, probe_spacing);
 
         ivec2 atlas_texel_idx = IntervalIdxToAtlasTexelIdx(block_idx, ivec2(line_idx), block_lines_count2);
 
-        ivec2 test_probe_idx = ivec2(83, 170);
+        ivec2 test_probe_idx = ivec2(3, 7);
         vec4 test_aabb = vec4(test_probe_idx, test_probe_idx + ivec2(1)) * float(c0_probe_spacing);
 
         float weight = GetLineIdxfWeight(block_idx, vec2(float(line_idx.x), line_idx_yf), block_lines_count2, probe_spacing);
-        /*
-        vec2 t;
-        bool pixel_aabb_hit = RayAABBIntersect(pixel_aabb, ray.origin, normalize(ray.dir), t.x, t.y);
-        bool light_aabb_hit = RayAABBIntersect(test_aabb, ray.origin, normalize(ray.dir), t.x, t.y);
+        
+        /*vec2 pixel_t;
+        bool pixel_aabb_hit = RayAABBIntersect(pixel_aabb, discrete_ray.origin, normalize(discrete_ray.dir), pixel_t.x, pixel_t.y);
+        vec2 light_t;
+        bool light_aabb_hit = RayAABBIntersect(test_aabb, discrete_ray.origin, normalize(discrete_ray.dir), light_t.x, light_t.y);
         if(pixel_aabb_hit && light_aabb_hit)
         {
           vec4 mult = vec4(1.0f);
-          vec2 rec_line_idx = RayToLineIdxf(block_idx, ray.origin, ray.dir, block_lines_count2, probe_spacing);
+          vec2 rec_line_idx = RayToLineIdxf(block_idx, discrete_ray.origin, discrete_ray.dir, block_lines_count2, probe_spacing);
           if(length(rec_line_idx - vec2(line_idx)) < 0.01f)
           {
-            //mult = vec4(0.0f, 1.0f, 0.0f, 1.0f);
+            mult = vec4(0.0f, 1.0f, 0.0f, 1.0f);
           }else
           {
-            //mult = vec4(1.0f, 0.0f, 0.0f, 1.0f);
+            mult = vec4(1.0f, 0.0f, 0.0f, 1.0f);
           }
           mult *= weight;
-          color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * mult * 5e-3;
+          color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * mult * 5e-2 * (pixel_t.y - pixel_t.x);
         }*/
 
         //vec2 t;
@@ -650,7 +696,7 @@ void RenderGraphMain()
   array<Image> merged_cascades;
 
   uint c0_probe_spacing = 30;
-  uint c0_probe_points_count = 2;
+  uint c0_probe_points_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
   uint curr_probe_points_count = c0_probe_points_count;
