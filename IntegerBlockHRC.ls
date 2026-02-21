@@ -153,12 +153,14 @@
   ivec2 GetLowLinePoint(ivec4 line_points, ivec2 ratio)
   {
     ratio *= Sign(ratio.y);
-    return line_points.xy + FloorDiv((line_points.zw - line_points.xy) * ratio.x, ratio.y);
+    ivec2 delta = line_points.zw - line_points.xy;
+    return line_points.xy + FloorDiv(abs(delta) * ratio.x, ratio.y) * ivec2(Sign(delta.x), Sign(delta.y));
   }
   ivec2 GetHighLinePoint(ivec4 line_points, ivec2 ratio)
   {
     ratio *= Sign(ratio.y);
-    return line_points.xy + CeilDiv((line_points.zw - line_points.xy) * ratio.x, ratio.y);
+    ivec2 delta = line_points.zw - line_points.xy;
+    return line_points.xy + CeilDiv(abs(delta) * ratio.x, ratio.y) * ivec2(Sign(delta.x), Sign(delta.y));
   }
 
   bool GreaterOrEq(ivec2 ratio, int v)
@@ -190,7 +192,7 @@
 
     LineSegments2 segments;
     segments.mask = 0u;
-    if(line_points.x == line_points.z)
+    /*if(line_points.x == line_points.z)
     {
       if(line_points.x < x)
       {
@@ -205,7 +207,7 @@
         segments.mask = 2u;
         return segments;
       }
-    }else
+    }else*/
     {
       //(s - x0 - 0.5) / (x1 - x0)
       ivec2 split_ratio = ivec2(2 * (x - line_points.x) - 1, 2 * (line_points.z - line_points.x));
@@ -431,8 +433,20 @@
       {
         color += vec4(0.0f, 0.0f, 1.0f, 0.0f);
       }
+      if(s.segment_points[1] != ivec4(1, 0, 1, 0))
+      {
+        color += vec4(0.0f, 0.0f, 1.0f, 0.0f);
+      }
     }
     return color;
+  }
+
+  float GetRayColor(ivec2 point, ivec4 line_points, int size)
+  {
+    ivec4 test_aabb = ivec4(0, 0, size - 1, size - 1);
+    ivec2 source_pos = ivec2(15, 4);
+    return IsPointOnAabbLine(point, line_points, test_aabb) >= 0/* && IsPointOnAabbLine(source_pos, line_points, test_aabb) >= 0*/ ? 1.0f : 0.0f;
+
   }
 }}
 
@@ -441,12 +455,54 @@ void IntegerTestShader(
   out vec4 color)
 {{
   ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
-  ivec2 tile_idx = pixel_idx / 30;
+  ivec2 tile_idx = pixel_idx / 20;
   float checkerboard = (tile_idx.x + tile_idx.y) % 2 == 0 ? 1.0f : 0.0f;
-  color = vec4(0.4f + 0.1f * checkerboard);
+  //color = vec4(0.01f + 0.005f * checkerboard);
 
-  ivec4 test_aabb_minmax = ivec4(0, 0, 1, 1);
-  ivec4 test_line_points = ivec4(0, 1, 1, 0);
+  int size = 32;
+
+  float total = 0.0f;
+  ivec4 test_aabb = ivec4(0, 0, size - 1, size - 1);
+  for(int t0 = 1; t0 < size - 1; t0++)
+  {
+    /*total += GetRayColor(tile_idx, ivec4(0, 0, 0, t0), size);
+    total += GetRayColor(tile_idx, ivec4(0, 0, t0, 0), size);
+    total += GetRayColor(tile_idx, ivec4(0, 0, t0, size - 1), size);
+    total += GetRayColor(tile_idx, ivec4(0, 0, size - 1, t0), size);
+
+    total += GetRayColor(tile_idx, ivec4(size - 1, 0, 0, t0), size);
+    total += GetRayColor(tile_idx, ivec4(size - 1, 0, t0, 0), size);
+    total += GetRayColor(tile_idx, ivec4(size - 1, 0, t0, size - 1), size);
+    total += GetRayColor(tile_idx, ivec4(size - 1, 0, size - 1, t0), size);
+
+    total += GetRayColor(tile_idx, ivec4(size - 1, size - 1, 0, t0), size);
+    total += GetRayColor(tile_idx, ivec4(size - 1, size - 1, t0, 0), size);
+    total += GetRayColor(tile_idx, ivec4(size - 1, size - 1, t0, size - 1), size);
+    total += GetRayColor(tile_idx, ivec4(size - 1, size - 1, size - 1, t0), size);
+
+    total += GetRayColor(tile_idx, ivec4(0, size - 1, 0, t0), size);
+    total += GetRayColor(tile_idx, ivec4(0, size - 1, t0, 0), size);
+    total += GetRayColor(tile_idx, ivec4(0, size - 1, t0, size - 1), size);
+    total += GetRayColor(tile_idx, ivec4(0, size - 1, size - 1, t0), size);*/
+
+    for(int t1 = 4; t1 < size - 1; t1 += 8)
+    {
+      int y = t0 + 5;
+      if(y < size - 1)
+      {
+        total += GetRayColor(tile_idx, ivec4(0, t0, size - 1, y), size);
+      }
+      /*total += GetRayColor(tile_idx, ivec4(0, t0, t1, 0), size);
+      total += GetRayColor(tile_idx, ivec4(0, t0, t1, size - 1), size);
+      total += GetRayColor(tile_idx, ivec4(t0, 0, t1, size - 1), size);
+      total += GetRayColor(tile_idx, ivec4(t0, 0, size - 1, t1), size);*/
+      //total += GetRayColor(tile_idx, ivec4(0, t0, size - 1, t1), size);
+    }
+  }
+  color += vec4(0.0f, total / 500.0f, 0.0f, 0.0f);
+  /*ivec4 test_aabb_minmax = ivec4(0, 0, size - 1, 31);
+  //ivec4 test_line_points = ivec4(31, 25, 0, 0);
+  ivec4 test_line_points = ivec4(14, 0, 31, 1);
   //ivec4 test_line_points = ivec4(27, 15, 0, 2);
 
   //int res = IsPointOnLine(tile_idx, test_line_points);
@@ -454,10 +510,10 @@ void IntegerTestShader(
   if(res >= 0)
   {
     color += vec4(0.0f, 0.3f * float(res + 1), 0.0f, 0.0f);
-  }
+  }*/
   /*if(res == -1)
     color += vec4(0.0f, 0.0f, 1.0f, 1.0f);*/
-  if(res == -2)
+  /*if(res == -2)
     color += vec4(1.0f, 1.0f, 0.0f, 1.0f);
   if(res == -3)
     color += vec4(0.0f, 0.0f, 1.0f, 1.0f);
@@ -466,7 +522,7 @@ void IntegerTestShader(
   if(res == -5)
     color += vec4(1.0f, 0.0f, 1.0f, 1.0f);
   if(res == -6)
-    color += vec4(1.0f, 1.0f, 0.0f, 1.0f);
+    color += vec4(1.0f, 1.0f, 0.0f, 1.0f);*/
 
   color += UnitTest();
   LineSegments2 segments = SplitLineX(ivec4(1, 0, 2, 3), 2);
