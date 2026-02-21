@@ -71,6 +71,66 @@
   };
 }}
 
+[declaration: "pixel_integer_lines"]
+{{
+  int Sign(int v)
+  {
+    return v < 0 ? -1 : 1;
+  }
+  ivec2 MinRatio(ivec2 r0, ivec2 r1)
+  {
+    //r0.x / r0.y < r1.x / r1.y ? r0 : r1
+    ivec2 u0 = r0 * Sign(r0.y);
+    ivec2 u1 = r1 * Sign(r0.y);
+    return (u0.x * u1.y < u1.x * u0.y) ? r0 : r1;
+  }
+
+  ivec2 MaxRatio(ivec2 r0, ivec2 r1)
+  {
+    ivec2 u0 = r0 * Sign(r0.y);
+    ivec2 u1 = r1 * Sign(r0.y);
+    return (u0.x * u1.y > u1.x * u0.y) ? r0 : r1;
+  }
+
+  ivec2 IntegerLineVsAABB(ivec4 line_points, ivec4 aabb_minmax)
+  {
+    ivec2 delta = line_points.zw - line_points.xy;
+    ivec2 p0 = line_points.xy;
+
+    ivec2 x1_ratio = ivec2(aabb.x - p0.x, delta.x);
+    ivec2 y1_ratio = ivec2(aabb.y - p0.y, delta.y);
+
+    ivec2 x2_ratio = ivec2(aabb.z - p0.x, delta.x);
+    ivec2 y2_ratio = ivec2(aabb.w - p0.y, delta.y);
+
+    ivec2 min_ratio = MaxRatio(MinRatio(x1_ratio, x2_ratio), MinRatio(t1_ratio, y2_ratio));
+    ivec2 max_ratio = MinRatio(MaxRatio(x1_ratio, x2_ratio), MaxRatio(t1_ratio, y2_ratio));
+
+    int line_len = max(abs(delta.x), abs(delta.y));
+    return ivec2(min_ratio.x * line_len / min_ratio.y, max_ratio.x * line_len / max_ratio.y);
+  }
+
+  int IsPointOnLine(ivec2 point, IntegerLine line)
+  {
+    return 0;
+  }
+
+}}
+
+[include: "pcg", "block_probe_layout2", "hrc_basis"]
+void IntegerTestShader(
+  out vec4 color)
+{{
+  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
+  ivec2 tile_idx = pixel_idx / 30;
+  float checkerboard = (tile_idx.x + tile_idx.y) % 2 == 0 ? 1.0f : 0.0f;
+  color = vec4(0.4f + 0.1f * checkerboard);
+
+  ivec4 test_aabb = ivec4(4, 4, 8, 8);
+
+}}
+
+
 [declaration: "hrc_basis"]
 {{
 
@@ -821,7 +881,7 @@ void RenderGraphMain()
     Text("c" + to_string(cascade_idx) + " size" +  to_string(curr_size));
   }
 
-  SetCascade(
+  /*SetCascade(
     c0_probe_spacing,
     c0_probe_points_count,
     0,
@@ -837,7 +897,7 @@ void RenderGraphMain()
       extended_cascades[src_cascade_idx],
       extended_cascades[src_cascade_idx + 1]
     );
-  }
+  }*/
 
   /*FinalGatheringShader(
     c0_probe_spacing,
@@ -847,14 +907,15 @@ void RenderGraphMain()
     GetSwapchainImage()
   );*/
   int gather_cascade_idx = SliderInt("Gather cascade_idx", 0, cascades_count - 1, 8);
+  IntegerTestShader(GetSwapchainImage());
 
-  FinalGatheringShader(
+  /*FinalGatheringShader(
     c0_probe_spacing,
     c0_probe_points_count,
     gather_cascade_idx,
     extended_cascades[gather_cascade_idx],
     GetSwapchainImage()
-  );
+  );*/
   /*CopyShader(
     extended_cascades[7],
     GetSwapchainImage());*/
