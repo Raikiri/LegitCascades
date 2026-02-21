@@ -110,6 +110,13 @@
     return (a + d) / b - d / b;
   }
 
+  int CeilDiv(int a, int b)
+  {
+    
+    int d = b * 100000;
+    return (a + d + b - 1) / b - d / b;
+  }
+
   int RoundDiv(int a, int b)
   {
     /*if(a < 0)
@@ -128,10 +135,30 @@
     return ivec2(RoundDiv(a.x, b), RoundDiv(a.y, b));
   }
 
+  ivec2 FloorDiv(ivec2 a, int b)
+  {
+    return ivec2(FloorDiv(a.x, b), FloorDiv(a.y, b));
+  }
+
+  ivec2 CeilDiv(ivec2 a, int b)
+  {
+    return ivec2(CeilDiv(a.x, b), CeilDiv(a.y, b));
+  }
+
   ivec2 GetLinePoint(ivec4 line_points, ivec2 ratio)
   {
     ratio *= Sign(ratio.y);
     return line_points.xy + RoundDiv((line_points.zw - line_points.xy) * ratio.x, ratio.y);
+  }
+  ivec2 GetLowLinePoint(ivec4 line_points, ivec2 ratio)
+  {
+    ratio *= Sign(ratio.y);
+    return line_points.xy + FloorDiv((line_points.zw - line_points.xy) * ratio.x, ratio.y);
+  }
+  ivec2 GetHighLinePoint(ivec4 line_points, ivec2 ratio)
+  {
+    ratio *= Sign(ratio.y);
+    return line_points.xy + CeilDiv((line_points.zw - line_points.xy) * ratio.x, ratio.y);
   }
 
   bool GreaterOrEq(ivec2 ratio, int v)
@@ -143,6 +170,14 @@
   {
     ratio *= Sign(ratio.y);
     return ratio.x <= ratio.y * v;
+  }
+  ivec2 Min(ivec2 ratio, int v)
+  {
+    return LesserOrEq(ratio, v) ? ratio : ivec2(v, 1);
+  }
+  ivec2 Max(ivec2 ratio, int v)
+  {
+    return GreaterOrEq(ratio, v) ? ratio : ivec2(v, 1);
   }
   LineSegments2 SplitLineX(ivec4 line_points, int x)
   {
@@ -172,12 +207,14 @@
       }
     }else
     {
-      bool dir = line_points.x <= line_points.z;
-      ivec2 ratio_left = ivec2(x - (dir ? 1 : 0) - line_points.x, line_points.z - line_points.x);
-      ivec2 ratio_right = ivec2(x - (!dir ? 1 : 0) - line_points.x, line_points.z - line_points.x);
+      //(s - x0 - 0.5) / (x1 - x0)
+      ivec2 split_ratio = ivec2(2 * (x - line_points.x) - 1, 2 * (line_points.z - line_points.x));
+      ivec2 ratio_left = Min(split_ratio, 1);
+      ivec2 ratio_right = Max(split_ratio, 0);
 
-      segments.segment_points[0] = ivec4(line_points.xy, GetLinePoint(line_points, ratio_left));
-      segments.segment_points[1] = ivec4(GetLinePoint(line_points, ratio_right), line_points.zw);
+      segments.segment_points[0] = ivec4(line_points.xy, GetLowLinePoint(line_points, ratio_left));
+      segments.segment_points[1] = ivec4(GetHighLinePoint(line_points, ratio_right), line_points.zw);
+
       if(GreaterOrEq(ratio_left, 0) && LesserOrEq(ratio_left, 1)) segments.mask |= 1u;
       if(GreaterOrEq(ratio_right, 0) && LesserOrEq(ratio_right, 1)) segments.mask |= (1u << 1u);
     }
@@ -187,8 +224,16 @@
   LineSegments2 SplitLineY(ivec4 line_points, int y)
   {
     LineSegments2 segments = SplitLineX(line_points.yxwz, y);
+
     segments.segment_points[0] = segments.segment_points[0].yxwz;
     segments.segment_points[1] = segments.segment_points[1].yxwz;
+
+    if(line_points.x == 0 && line_points.y == 1 && line_points.z == 3 && line_points.w == 2)
+    {
+      LineSegments2 segments2 = SplitLineX(ivec4(1, 0, 2, 3), 2);
+      //segments.segment_points[0].z = 1;
+      //segments.segment_points[0] = ivec4(1, 0, 1, 1);
+    }
     return segments;
   }
 
@@ -298,6 +343,7 @@
   {
     LineSegment segment;
     LineSegments2 y_segments = SplitLineY(line, split.y);
+    
     if(child_idx == 0 || child_idx == 1)
     {
       LineSegments2 x_segments = SplitLineX(y_segments.segment_points[0], split.x);
@@ -327,6 +373,10 @@
         return segment;
       }
     }
+  }
+  bool Equal(ivec4 a, ivec4 b)
+  {
+    return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
   }
   int GetChildIdx(ivec2 point, ivec2 split)
   {
@@ -360,6 +410,30 @@
     }
     return -3;
   }
+
+  vec4 UnitTest()
+  {
+    vec4 color = vec4(0.0f);
+    {
+      LineSegments2 s = SplitLineX(ivec4(0, 0, 1, 1), 1);
+      if(s.segment_points[0] != ivec4(0))
+      {
+        color += vec4(1.0f, 0.0f, 0.0f, 0.0f);
+      }
+      if(s.segment_points[1] != ivec4(1))
+      {
+        color += vec4(1.0f, 0.0f, 0.0f, 0.0f);
+      }
+    }
+    {
+      LineSegments2 s = SplitLineX(ivec4(0, 1, 1, 0), 1);
+      if(s.segment_points[0] != ivec4(0, 1, 0, 1))
+      {
+        color += vec4(0.0f, 0.0f, 1.0f, 0.0f);
+      }
+    }
+    return color;
+  }
 }}
 
 [include: "pcg", "pixel_integer_lines"]
@@ -371,8 +445,8 @@ void IntegerTestShader(
   float checkerboard = (tile_idx.x + tile_idx.y) % 2 == 0 ? 1.0f : 0.0f;
   color = vec4(0.4f + 0.1f * checkerboard);
 
-  ivec4 test_aabb_minmax = ivec4(0, 0, 3, 3);
-  ivec4 test_line_points = ivec4(3, 0, 0, 3);
+  ivec4 test_aabb_minmax = ivec4(0, 0, 1, 1);
+  ivec4 test_line_points = ivec4(0, 1, 1, 0);
   //ivec4 test_line_points = ivec4(27, 15, 0, 2);
 
   //int res = IsPointOnLine(tile_idx, test_line_points);
@@ -393,6 +467,13 @@ void IntegerTestShader(
     color += vec4(1.0f, 0.0f, 1.0f, 1.0f);
   if(res == -6)
     color += vec4(1.0f, 1.0f, 0.0f, 1.0f);
+
+  color += UnitTest();
+  LineSegments2 segments = SplitLineX(ivec4(1, 0, 2, 3), 2);
+  /*if(segments.segment_points[0].x == 1 && segments.segment_points[0].y == 0 && segments.segment_points[0].z == 1 && segments.segment_points[0].w == 1)
+  {
+    color += vec4(0.0f, 0.5f, 0.0f, 0.0f);
+  }*/
 
 }}
 
