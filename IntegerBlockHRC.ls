@@ -92,32 +92,277 @@
     return (u0.x * u1.y > u1.x * u0.y) ? r0 : r1;
   }
 
+  int IntegerLineLen(ivec4 line_points)
+  {
+    ivec2 delta = line_points.zw - line_points.xy;
+    return max(abs(delta.x), abs(delta.y));
+  }
+
+  struct LineSegments2
+  {
+    ivec4 segment_points[2];
+    uint mask;
+  };
+
+  int FloorDiv(int a, int b)
+  {
+    int d = b * 100000;
+    return (a + d) / b - d / b;
+  }
+
+  int RoundDiv(int a, int b)
+  {
+    /*if(a < 0)
+    {
+      a *= -1;
+      b *= -1;
+    }*/
+    
+    int d = b * 100000;
+    //return (a + (b >> 1) + d) / b - d / b;
+    return (a + (b - 1) / 2 + d) / b - d / b;
+  }
+
+  ivec2 RoundDiv(ivec2 a, int b)
+  {
+    return ivec2(RoundDiv(a.x, b), RoundDiv(a.y, b));
+  }
+
+  ivec2 GetLinePoint(ivec4 line_points, ivec2 ratio)
+  {
+    ratio *= Sign(ratio.y);
+    return line_points.xy + RoundDiv((line_points.zw - line_points.xy) * ratio.x, ratio.y);
+  }
+
+  bool GreaterOrEq(ivec2 ratio, int v)
+  {
+    ratio *= Sign(ratio.y);
+    return ratio.x >= ratio.y * v;
+  }
+  bool LesserOrEq(ivec2 ratio, int v)
+  {
+    ratio *= Sign(ratio.y);
+    return ratio.x <= ratio.y * v;
+  }
+  LineSegments2 SplitLineX(ivec4 line_points, int x)
+  {
+    if(line_points.x > line_points.z)
+    {
+      ivec2 t = line_points.xy;
+      line_points.xy = line_points.zw;
+      line_points.zw = t;
+    }
+
+    LineSegments2 segments;
+    segments.mask = 0u;
+    if(line_points.x == line_points.z)
+    {
+      if(line_points.x < x)
+      {
+        segments.segment_points[0] = line_points;
+        segments.segment_points[1] = ivec4(0);
+        segments.mask = 1u;
+        return segments;
+      }else
+      {
+        segments.segment_points[0] = ivec4(0);
+        segments.segment_points[1] = line_points;
+        segments.mask = 2u;
+        return segments;
+      }
+    }else
+    {
+      bool dir = line_points.x <= line_points.z;
+      ivec2 ratio_left = ivec2(x - (dir ? 1 : 0) - line_points.x, line_points.z - line_points.x);
+      ivec2 ratio_right = ivec2(x - (!dir ? 1 : 0) - line_points.x, line_points.z - line_points.x);
+
+      segments.segment_points[0] = ivec4(line_points.xy, GetLinePoint(line_points, ratio_left));
+      segments.segment_points[1] = ivec4(GetLinePoint(line_points, ratio_right), line_points.zw);
+      if(GreaterOrEq(ratio_left, 0) && LesserOrEq(ratio_left, 1)) segments.mask |= 1u;
+      if(GreaterOrEq(ratio_right, 0) && LesserOrEq(ratio_right, 1)) segments.mask |= (1u << 1u);
+    }
+    return segments;
+  }
+
+  LineSegments2 SplitLineY(ivec4 line_points, int y)
+  {
+    LineSegments2 segments = SplitLineX(line_points.yxwz, y);
+    segments.segment_points[0] = segments.segment_points[0].yxwz;
+    segments.segment_points[1] = segments.segment_points[1].yxwz;
+    return segments;
+  }
+
   ivec2 IntegerLineVsAABB(ivec4 line_points, ivec4 aabb_minmax)
   {
     ivec2 delta = line_points.zw - line_points.xy;
-    ivec2 p0 = line_points.xy;
+    ivec2 p = line_points.xy;
 
-    ivec2 x1_ratio = ivec2(aabb.x - p0.x, delta.x);
-    ivec2 y1_ratio = ivec2(aabb.y - p0.y, delta.y);
+    ivec2 x1_ratio = ivec2(aabb_minmax.x - p.x, delta.x);
+    ivec2 y1_ratio = ivec2(aabb_minmax.y - p.y, delta.y);
 
-    ivec2 x2_ratio = ivec2(aabb.z - p0.x, delta.x);
-    ivec2 y2_ratio = ivec2(aabb.w - p0.y, delta.y);
+    ivec2 x2_ratio = ivec2(aabb_minmax.z - p.x, delta.x);
+    ivec2 y2_ratio = ivec2(aabb_minmax.w - p.y, delta.y);
 
-    ivec2 min_ratio = MaxRatio(MinRatio(x1_ratio, x2_ratio), MinRatio(t1_ratio, y2_ratio));
-    ivec2 max_ratio = MinRatio(MaxRatio(x1_ratio, x2_ratio), MaxRatio(t1_ratio, y2_ratio));
+    ivec2 min_ratio = MaxRatio(MinRatio(x1_ratio, x2_ratio), MinRatio(y1_ratio, y2_ratio));
+    ivec2 max_ratio = MinRatio(MaxRatio(x1_ratio, x2_ratio), MaxRatio(y1_ratio, y2_ratio));
 
-    int line_len = max(abs(delta.x), abs(delta.y));
-    return ivec2(min_ratio.x * line_len / min_ratio.y, max_ratio.x * line_len / max_ratio.y);
+    int line_len = IntegerLineLen(line_points);
+    //min_ratio *= Sign(min_ratio.y);
+    //max_ratio *= Sign(max_ratio.y);
+    return ivec2(min_ratio.y == 0 ? 0x0 : min_ratio.x * line_len / min_ratio.y, max_ratio.y == 0 ? 0xffff : max_ratio.x * line_len / max_ratio.y);
   }
 
-  int IsPointOnLine(ivec2 point, IntegerLine line)
+  bool IsPointInInterval(int p, ivec2 interval)
   {
-    return 0;
+    return (p >= interval.x && p <= interval.y) || (p >= interval.y && p <= interval.x);
+  }
+  int IsPointOnLine(ivec2 point, ivec4 line_points)
+  {
+    if(!IsPointInInterval(point.x, line_points.xz)) return -1;
+    ivec4 curr_line_points = line_points;
+    for(int i = 0; i < 10; i++)
+    {
+      if(abs(curr_line_points.z - curr_line_points.x) == 0) return IsPointInInterval(point.y, curr_line_points.yw) ? i : -6;
+      int x_midpoint = (curr_line_points.x + curr_line_points.z) / 2 + 1;
+      //int x_midpoint = FloorDiv(curr_line_points.x + curr_line_points.z, 2) + 1;
+      LineSegments2 segments = SplitLineX(curr_line_points, x_midpoint);
+      if(IsPointInInterval(point.x, ivec2(segments.segment_points[0].x, segments.segment_points[0].z)))
+      {
+        if((segments.mask & 1u) == 0u) return -2;
+        curr_line_points = segments.segment_points[0];
+      }else
+      if(IsPointInInterval(point.x, ivec2(segments.segment_points[1].x, segments.segment_points[1].z)))
+      {
+        if((segments.mask & 2u) == 0u) return -3;
+        curr_line_points = segments.segment_points[1];
+      }else
+      {
+        return -4;
+      }
+    }
+    return -5;
   }
 
+  bool IsPointInAabb(ivec2 point, ivec4 aabb_minmax)
+  {
+    return point.x >= aabb_minmax.x && point.x <= aabb_minmax.z && point.y >= aabb_minmax.y && point.y <= aabb_minmax.w;
+  }
+
+  ivec4 GetChildAabb(ivec4 aabb, ivec2 split, int child_idx)
+  {
+    ivec4 child_aabb;
+    if(child_idx == 0 || child_idx == 2)
+    {
+      child_aabb.x = aabb.x;
+      child_aabb.z = split.x - 1;
+    }else
+    {
+      child_aabb.x = split.x;
+      child_aabb.z = aabb.z;
+    }
+    if(child_idx == 0 || child_idx == 1)
+    {
+      child_aabb.y = aabb.y;
+      child_aabb.w = split.y - 1;
+    }else
+    {
+      child_aabb.y = split.y;
+      child_aabb.w = aabb.w;
+    }
+    return child_aabb;
+  }
+  struct LineSegments4
+  {
+    ivec4 line_points[4];
+    uint mask;
+  };
+  /*LineSegments4 SplitLineXY(ivec4 line, ivec2 split)
+  {
+    LineSegments2 y_segments = SplitLineY(line, split.y);
+    LineSegments2 x_segments0 = SplitLineX(y_segments.segment_points[0], split.x);
+    LineSegments2 x_segments1 = SplitLineX(y_segments.segment_points[1], split.x);
+
+    LineSegments4 segments;
+    segments.mask = 0u;
+    segments.line_points[0] = x_segments0.segment_points[0];
+    segments.segments.mask = (x_segments0.mask & 1) == 1) &&
+    
+  }*/
+
+  struct LineSegment
+  {
+    ivec4 segment_points;
+    bool is_present;
+  };
+  LineSegment GetChildLine(ivec4 line, ivec2 split, int child_idx)
+  {
+    LineSegment segment;
+    LineSegments2 y_segments = SplitLineY(line, split.y);
+    if(child_idx == 0 || child_idx == 1)
+    {
+      LineSegments2 x_segments = SplitLineX(y_segments.segment_points[0], split.x);
+      if(child_idx == 0)
+      {
+        segment.segment_points = x_segments.segment_points[0];
+        segment.is_present = ((x_segments.mask & 1u) == 1u) && ((y_segments.mask & 1u) == 1u);
+        return segment;
+      }else
+      {
+        segment.segment_points = x_segments.segment_points[1];
+        segment.is_present = (((x_segments.mask >> 1u) & 1u) == 1u) && ((y_segments.mask & 1u) == 1u);
+        return segment;
+      }
+    }else
+    {
+      LineSegments2 x_segments = SplitLineX(y_segments.segment_points[1], split.x);
+      if(child_idx == 2)
+      {
+        segment.segment_points = x_segments.segment_points[0];
+        segment.is_present = ((x_segments.mask & 1u) == 1u) && (((y_segments.mask >> 1u) & 1u) == 1u);
+        return segment;
+      }else
+      {
+        segment.segment_points = x_segments.segment_points[1];
+        segment.is_present = (((x_segments.mask >> 1u) & 1u) == 1u) && (((y_segments.mask >> 1u) & 1u) == 1u);
+        return segment;
+      }
+    }
+  }
+  int GetChildIdx(ivec2 point, ivec2 split)
+  {
+    int idx = 0;
+    if(point.x >= split.x) idx += 1;
+    if(point.y >= split.y) idx += 2;
+    return idx;
+  }
+  int IsPointOnAabbLine(ivec2 point, ivec4 line_points, ivec4 aabb_minmax)
+  {
+    ivec4 curr_aabb = aabb_minmax;
+    if(!IsPointInAabb(point, curr_aabb))
+      return -1;
+    ivec4 curr_line_points = line_points;
+
+    for(int i = 0; i < 10; i++)
+    {
+      if(!IsPointInAabb(curr_line_points.xy, curr_aabb)) return -4;
+      if(!IsPointInAabb(curr_line_points.zw, curr_aabb)) return -5;
+      if(curr_aabb.x == curr_aabb.z) return i;
+
+      ivec2 split;
+      split.x = (curr_aabb.x + curr_aabb.z) / 2 + 1;
+      split.y = (curr_aabb.y + curr_aabb.w) / 2 + 1;
+
+      int child_idx = GetChildIdx(point, split);
+      curr_aabb = GetChildAabb(curr_aabb, split, child_idx);
+      LineSegment child_segment = GetChildLine(curr_line_points, split, child_idx);
+      if(!child_segment.is_present) return -2;
+      curr_line_points = child_segment.segment_points;
+    }
+    return -3;
+  }
 }}
 
-[include: "pcg", "block_probe_layout2", "hrc_basis"]
+[include: "pcg", "pixel_integer_lines"]
 void IntegerTestShader(
   out vec4 color)
 {{
@@ -126,7 +371,28 @@ void IntegerTestShader(
   float checkerboard = (tile_idx.x + tile_idx.y) % 2 == 0 ? 1.0f : 0.0f;
   color = vec4(0.4f + 0.1f * checkerboard);
 
-  ivec4 test_aabb = ivec4(4, 4, 8, 8);
+  ivec4 test_aabb_minmax = ivec4(0, 0, 3, 3);
+  ivec4 test_line_points = ivec4(3, 0, 0, 3);
+  //ivec4 test_line_points = ivec4(27, 15, 0, 2);
+
+  //int res = IsPointOnLine(tile_idx, test_line_points);
+  int res = IsPointOnAabbLine(tile_idx, test_line_points, test_aabb_minmax);
+  if(res >= 0)
+  {
+    color += vec4(0.0f, 0.3f * float(res + 1), 0.0f, 0.0f);
+  }
+  /*if(res == -1)
+    color += vec4(0.0f, 0.0f, 1.0f, 1.0f);*/
+  if(res == -2)
+    color += vec4(1.0f, 1.0f, 0.0f, 1.0f);
+  if(res == -3)
+    color += vec4(0.0f, 0.0f, 1.0f, 1.0f);
+  if(res == -4)
+    color += vec4(1.0f, 0.0f, 1.0f, 1.0f);
+  if(res == -5)
+    color += vec4(1.0f, 0.0f, 1.0f, 1.0f);
+  if(res == -6)
+    color += vec4(1.0f, 1.0f, 0.0f, 1.0f);
 
 }}
 
