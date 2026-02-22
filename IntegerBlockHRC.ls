@@ -230,33 +230,7 @@
     segments.segment_points[0] = segments.segment_points[0].yxwz;
     segments.segment_points[1] = segments.segment_points[1].yxwz;
 
-    if(line_points.x == 0 && line_points.y == 1 && line_points.z == 3 && line_points.w == 2)
-    {
-      LineSegments2 segments2 = SplitLineX(ivec4(1, 0, 2, 3), 2);
-      //segments.segment_points[0].z = 1;
-      //segments.segment_points[0] = ivec4(1, 0, 1, 1);
-    }
     return segments;
-  }
-
-  ivec2 IntegerLineVsAABB(ivec4 line_points, ivec4 aabb_minmax)
-  {
-    ivec2 delta = line_points.zw - line_points.xy;
-    ivec2 p = line_points.xy;
-
-    ivec2 x1_ratio = ivec2(aabb_minmax.x - p.x, delta.x);
-    ivec2 y1_ratio = ivec2(aabb_minmax.y - p.y, delta.y);
-
-    ivec2 x2_ratio = ivec2(aabb_minmax.z - p.x, delta.x);
-    ivec2 y2_ratio = ivec2(aabb_minmax.w - p.y, delta.y);
-
-    ivec2 min_ratio = MaxRatio(MinRatio(x1_ratio, x2_ratio), MinRatio(y1_ratio, y2_ratio));
-    ivec2 max_ratio = MinRatio(MaxRatio(x1_ratio, x2_ratio), MaxRatio(y1_ratio, y2_ratio));
-
-    int line_len = IntegerLineLen(line_points);
-    //min_ratio *= Sign(min_ratio.y);
-    //max_ratio *= Sign(max_ratio.y);
-    return ivec2(min_ratio.y == 0 ? 0x0 : min_ratio.x * line_len / min_ratio.y, max_ratio.y == 0 ? 0xffff : max_ratio.x * line_len / max_ratio.y);
   }
 
   bool IsPointInInterval(int p, ivec2 interval)
@@ -455,15 +429,15 @@ void IntegerTestShader(
   out vec4 color)
 {{
   ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
-  ivec2 tile_idx = pixel_idx / 20;
+  ivec2 tile_idx = pixel_idx / 128;
   float checkerboard = (tile_idx.x + tile_idx.y) % 2 == 0 ? 1.0f : 0.0f;
-  //color = vec4(0.01f + 0.005f * checkerboard);
+  color = vec4(0.001f + 0.001f * checkerboard);
 
-  int size = 32;
+  int size = 4;
 
   float total = 0.0f;
   ivec4 test_aabb = ivec4(0, 0, size - 1, size - 1);
-  for(int t0 = 1; t0 < size - 1; t0++)
+  for(int t0 = 1; t0 < 2; t0++)
   {
     /*total += GetRayColor(tile_idx, ivec4(0, 0, 0, t0), size);
     total += GetRayColor(tile_idx, ivec4(0, 0, t0, 0), size);
@@ -485,10 +459,10 @@ void IntegerTestShader(
     total += GetRayColor(tile_idx, ivec4(0, size - 1, t0, size - 1), size);
     total += GetRayColor(tile_idx, ivec4(0, size - 1, size - 1, t0), size);*/
 
-    for(int t1 = 4; t1 < size - 1; t1 += 8)
+    //for(int t1 = 0; t1 < size - 1; t1 += 8)
     {
-      int y = t0 + 5;
-      if(y < size - 1)
+      int y = t0 + size / 2;
+      if(y < size)
       {
         total += GetRayColor(tile_idx, ivec4(0, t0, size - 1, y), size);
       }
@@ -499,7 +473,11 @@ void IntegerTestShader(
       //total += GetRayColor(tile_idx, ivec4(0, t0, size - 1, t1), size);
     }
   }
-  color += vec4(0.0f, total / 500.0f, 0.0f, 0.0f);
+  color += vec4(0.0f, total / 50.0f, 0.0f, 0.0f);
+  if(IsPointInAabb(tile_idx, test_aabb))
+  {
+    color += vec4(0.01f, 0.01f, 0.0f, 0.0f) * 0.3;
+  }
   /*ivec4 test_aabb_minmax = ivec4(0, 0, size - 1, 31);
   //ivec4 test_line_points = ivec4(31, 25, 0, 0);
   ivec4 test_line_points = ivec4(14, 0, 31, 1);
@@ -533,6 +511,202 @@ void IntegerTestShader(
 
 }}
 
+[declaration: "pixel_integer_lines2"]
+{{
+  struct BoxLine
+  {
+    ivec2 aabb_min;
+    ivec2 aabb_size;
+    int start_idx;
+    int delta_idx;
+  };
+
+  int HalfFloor(int val)
+  {
+    return val / 2;
+  }
+  int HalfCeil(int val)
+  {
+    return (val + 1) / 2;
+  }
+  int QuarterFloor(int val)
+  {
+    return val / 4;
+  }
+  int QuarterCeil(int val)
+  {
+    return (val + 3) / 4;
+  }
+  BoxLine GetChildLine(BoxLine parent_line, uint child_idx)
+  {
+    BoxLine child_line;
+    child_line.aabb_size = parent_line.aabb_size / 2;
+    int N = parent_line.aabb_size.y;
+    if(child_idx == 0u)
+    {
+      child_line.aabb_min = parent_line.aabb_min;
+      child_line.start_idx = parent_line.start_idx;
+      child_line.delta_idx = HalfFloor(parent_line.delta_idx);
+    }else
+    if(child_idx == 1u)
+    {
+      child_line.aabb_min = parent_line.aabb_min + ivec2(parent_line.aabb_size.x / 2, 0);
+      child_line.start_idx = parent_line.start_idx + HalfCeil(parent_line.delta_idx);
+      child_line.delta_idx = HalfFloor(parent_line.delta_idx);
+    }else
+    if(child_idx == 2u)
+    {
+      child_line.aabb_min = parent_line.aabb_min + ivec2(0, parent_line.aabb_size.y / 2);
+      child_line.start_idx = parent_line.start_idx - parent_line.aabb_size.y / 2;
+      child_line.delta_idx = HalfFloor(parent_line.delta_idx);
+    }else
+    //if(child_idx == 3)
+    {
+      child_line.aabb_min = parent_line.aabb_min + ivec2(parent_line.aabb_size.x / 2, parent_line.aabb_size.y / 2);
+      child_line.start_idx = parent_line.start_idx - parent_line.aabb_size.y / 2 + HalfCeil(parent_line.delta_idx);
+      child_line.delta_idx = HalfFloor(parent_line.delta_idx);
+    }
+    return child_line;
+  }
+
+  BoxLine GetChildLineDiag(BoxLine parent_line, uint child_idx)
+  {
+    BoxLine child_line;
+    child_line.aabb_size = parent_line.aabb_size / 2;
+    int M = 2;
+    int N = parent_line.aabb_size.y;
+    if(child_idx == 0u)
+    {
+      child_line.aabb_min = parent_line.aabb_min;
+      child_line.start_idx = parent_line.start_idx - QuarterCeil(parent_line.delta_idx);
+      child_line.delta_idx = HalfFloor(parent_line.delta_idx);
+    }else
+    if(child_idx == 1u)
+    {
+      child_line.aabb_min = parent_line.aabb_min + ivec2(parent_line.aabb_size.x / M, 0);
+      child_line.start_idx = parent_line.start_idx;
+      child_line.delta_idx = HalfFloor(parent_line.delta_idx);
+    }else
+    if(child_idx == 2u)
+    {
+      child_line.aabb_min = parent_line.aabb_min + ivec2(0, parent_line.aabb_size.y / 2);
+      child_line.start_idx = parent_line.start_idx - N / 2;
+      child_line.delta_idx = HalfFloor(parent_line.delta_idx);
+    }else
+    //if(child_idx == 3)
+    {
+      child_line.aabb_min = parent_line.aabb_min + ivec2(parent_line.aabb_size.x / 2, parent_line.aabb_size.y / 2);
+      child_line.start_idx = parent_line.start_idx - N / 2 + QuarterFloor(parent_line.delta_idx);
+      child_line.delta_idx = HalfFloor(parent_line.delta_idx);
+    }
+    return child_line;
+  }
+
+  uint GetQuadrantIdx(ivec2 delta)
+  {
+    uint child_idx = 0u;
+    if(delta.x >= 0) child_idx += 1u;
+    if(delta.y >= 0) child_idx += 2u;
+    return child_idx;
+  }
+
+  uint GetAabbChildIdx(ivec2 point, ivec2 aabb_min, ivec2 aabb_size)
+  {
+    return GetQuadrantIdx(point - (aabb_min + aabb_size / 2));
+  }
+
+  bool IsPointInAabb(ivec2 point, ivec2 aabb_min, ivec2 aabb_size)
+  {
+    return point.x >= aabb_min.x && point.x < aabb_min.x + aabb_size.x && point.y >= aabb_min.y && point.y < aabb_min.y + aabb_size.y;
+  }
+
+  bool IsBoxLineContained(BoxLine box_line)
+  {
+    int N = box_line.aabb_size.y;
+    return box_line.start_idx > -N && box_line.start_idx < N && box_line.delta_idx >= 0 && box_line.delta_idx < N;
+  }
+
+  bool IsBoxLineContainedDiag(BoxLine box_line)
+  {
+    int N = box_line.aabb_size.y;
+    return box_line.start_idx >= 0 && box_line.start_idx < N && box_line.delta_idx >= 0 && box_line.delta_idx < N;
+  }
+
+  int IsPointOnBoxLine(ivec2 point, BoxLine box_line)
+  {
+    BoxLine curr_line = box_line;
+    for(int i = 0; i < 10; i++)
+    {
+      if(!IsPointInAabb(point, curr_line.aabb_min, curr_line.aabb_size)) return -1;
+      if(!IsBoxLineContainedDiag(curr_line)) return -2;
+      if(curr_line.aabb_size.x <= 1 && curr_line.aabb_size.y <= 1) return i;
+      uint child_idx = GetAabbChildIdx(point, curr_line.aabb_min, curr_line.aabb_size);
+      curr_line = GetChildLineDiag(curr_line, child_idx);
+    }
+    return -3;
+  }
+}}
+
+
+[include: "pcg", "pixel_integer_lines2"]
+void IntegerTestShader2(
+  ivec2 source_tile_idx,
+  out vec4 color)
+{{
+  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
+  ivec2 tile_idx = pixel_idx / 32;
+  float checkerboard = (tile_idx.x + tile_idx.y) % 2 == 0 ? 1.0f : 0.0f;
+  //color = vec4(0.001f + 0.001f * checkerboard);
+  int N = 32;
+
+  /*BoxLine test_line;
+  test_line.aabb_min = ivec2(0);
+  test_line.aabb_size = ivec2(N);
+  if(IsPointInAabb(tile_idx, test_line.aabb_min, test_line.aabb_size))
+  {
+    test_line.start_idx = 0;
+    test_line.delta_idx = 14;
+    int res = IsPointOnBoxLine(tile_idx, test_line);
+    if(res >= 0)
+    {
+      color += vec4(0.0f, 0.5f, 0.0f, 0.0f);
+    }
+    if(res == -1)
+    {
+      color += vec4(0.05f, 0.0f, 0.0f, 0.0f);
+    }
+    if(res == -2)
+    {
+      color += vec4(0.01f, 0.01f, 0.0f, 0.0f);
+    }
+    if(res == -3)
+    {
+      color += vec4(0.0f, 0.1f, 0.1f, 0.0f);
+    }
+  }*/
+
+  BoxLine test_line;
+  test_line.aabb_min = ivec2(0);
+  test_line.aabb_size = ivec2(N);
+  //ivec2 source_tile_idx = ivec2(15, 27);
+  if(IsPointInAabb(tile_idx, test_line.aabb_min, test_line.aabb_size))
+  {
+    for(int t0 = -N + 1; t0 < N; t0++)
+    {
+      for(int t1 = 0; t1 < N; t1++)
+      {
+        {
+          test_line.start_idx = t0;
+          test_line.delta_idx = t1;
+        }
+        if(IsPointOnBoxLine(tile_idx, test_line) >= 0 && IsPointOnBoxLine(source_tile_idx, test_line) >= 0)
+        {
+          color += vec4(0.0f, 1.0f, 0.0f, 0.0f) * 0.002f;
+        }
+      }
+    }
+  }
+}}
 
 [declaration: "hrc_basis"]
 {{
@@ -1310,7 +1484,11 @@ void RenderGraphMain()
     GetSwapchainImage()
   );*/
   int gather_cascade_idx = SliderInt("Gather cascade_idx", 0, cascades_count - 1, 8);
-  IntegerTestShader(GetSwapchainImage());
+
+  ivec2 source_tile_idx;
+  source_tile_idx.x = SliderInt("Source x", 0, 256, 14);
+  source_tile_idx.y = SliderInt("Source y", 0, 256, 7);
+  IntegerTestShader2(source_tile_idx, GetSwapchainImage());
 
   /*FinalGatheringShader(
     c0_probe_spacing,
