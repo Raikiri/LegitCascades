@@ -38,16 +38,25 @@ void RenderGraphMain()
     merged_cascades.insertLast(GetImage(curr_size, rgba16f));
     curr_line_spacing *= 2;
     curr_dirs_count *= 2;
-    Text("c" + to_string(cascade_idx) + " size" +  to_string(curr_size));
+    //Text("c" + to_string(cascade_idx) + " size" +  to_string(curr_size));
   }
+
+  uint test_cascade_idx = SliderInt("cascade_idx", 0, 4, 0);
+  uint test_line_idx = SliderInt("line_idx", 0, 16, 0);
+  uint test_probe_idx = SliderInt("probe_idx", 0, 16, 0);
+  uint test_dir_idx = SliderInt("dir_idx", 0, 16, 0);
 
   ivec2 source_tile_idx;
   source_tile_idx.x = SliderInt("Source x", 0, 256, 14);
   source_tile_idx.y = SliderInt("Source y", 0, 256, 7);
+
   ProbeLayoutTestShader(
     c0_probe_spacing,
     c0_line_spacing,
-    c0_dirs_count,
+    test_cascade_idx,
+    test_line_idx,
+    test_probe_idx,
+    test_dir_idx,
     source_tile_idx, GetSwapchainImage());
 
   Text("Fps: " + GetSmoothFps());
@@ -57,7 +66,10 @@ void RenderGraphMain()
 void ProbeLayoutTestShader(
   uint c0_probe_spacing,
   uint c0_line_spacing,
-  uint c0_dirs_count,
+  uint test_cascade_idx,
+  int test_line_idx,
+  int test_probe_idx,
+  int test_dir_idx,
   ivec2 source_tile_idx,
   out vec4 color)
 {{
@@ -65,22 +77,29 @@ void ProbeLayoutTestShader(
   ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
   color = vec4(0.005f) * GetCheckerboard(tile_idx);
 
-  uint cascade_idx = 0u;
   uint probe_spacing = c0_probe_spacing;
-  uint line_spacing = c0_line_spacing << cascade_idx;
+  uint line_spacing = c0_line_spacing << test_cascade_idx;
 
-  int test_line_idx = 3;
+  /*int test_line_idx = 3;
   float test_probe_idx = 0.0f;
-  float test_dir_idx = 0.0f;
+  float test_dir_idx = 0.0f;*/
+  float preceding_falloff_dist = float(c0_probe_spacing) * float(1u << test_cascade_idx);
+  float falloff_scale = float(c0_probe_spacing);
+
   float probe_func = GetProbeFunction(
     gl_FragCoord.xy,
     test_line_idx,
-    test_probe_idx,
-    test_dir_idx,
+    float(test_probe_idx),
+    float(test_dir_idx),
     probe_spacing,
     line_spacing);
+  
+  vec2 falloff_range = GetCascadeFalloffRange(test_cascade_idx);
 
-  color += vec4(0.0f, 1.0f, 0.0f, 0.0f) * 0.1f * probe_func;
+  if(probe_func >= -0.5f)
+  {
+    color += vec4(0.0f, 1.0f, 0.0f, 0.0f) * 0.1f * mix(falloff_range.x, falloff_range.y, probe_func);
+  }
 }}
 
 void ClearShader(out vec4 col)
@@ -95,6 +114,10 @@ void CopyShader(sampler2D tex, out vec4 col)
 
 [declaration: "polygon_layout"]
 {{
+  vec2 GetCascadeFalloffRange(uint cascade_idx)
+  {
+    return vec2(1.0f) / vec2(float(1u << cascade_idx), float(1u << (cascade_idx + 1u)));
+  }
   float GetPolygonFunction(vec2 pos, float left_x, vec2 left_y_range, float right_x, vec2 right_y_range)
   {
     if(pos.x >= left_x && pos.x < right_x)
@@ -102,9 +125,12 @@ void CopyShader(sampler2D tex, out vec4 col)
       //return 1.0f;
       float x_ratio = (pos.x - left_x) / (right_x - left_x);
       vec2 y_range = mix(left_y_range, right_y_range, x_ratio);
-      if(pos.y >= y_range.x && pos.y < y_range.y) return 1.0f;
+      if(pos.y >= y_range.x && pos.y < y_range.y)
+      {
+        return x_ratio;
+      }
     }
-    return 0.0f;
+    return -1.0f;
   }
 
   float GetProbeFunction(
