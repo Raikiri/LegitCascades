@@ -21,7 +21,7 @@ void RenderGraphMain()
   array<Image> merged_cascades;
 
   uint c0_probe_spacing = 30;
-  uint c0_line_spacing = 20;
+  uint c0_line_spacing = 30;
   uint c0_dirs_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
@@ -53,7 +53,7 @@ void RenderGraphMain()
   Text("Fps: " + GetSmoothFps());
 }}
 
-[include: "config", "pcg", "utils"]
+[include: "config", "pcg", "utils", "polygon_layout"]
 void ProbeLayoutTestShader(
   uint c0_probe_spacing,
   uint c0_line_spacing,
@@ -64,6 +64,23 @@ void ProbeLayoutTestShader(
   ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
   ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
   color = vec4(0.005f) * GetCheckerboard(tile_idx);
+
+  uint cascade_idx = 0u;
+  uint probe_spacing = c0_probe_spacing;
+  uint line_spacing = c0_line_spacing << cascade_idx;
+
+  int test_line_idx = 3;
+  float test_probe_idx = 0.0f;
+  float test_dir_idx = 0.0f;
+  float probe_func = GetProbeFunction(
+    gl_FragCoord.xy,
+    test_line_idx,
+    test_probe_idx,
+    test_dir_idx,
+    probe_spacing,
+    line_spacing);
+
+  color += vec4(0.0f, 1.0f, 0.0f, 0.0f) * 0.1f * probe_func;
 }}
 
 void ClearShader(out vec4 col)
@@ -78,20 +95,33 @@ void CopyShader(sampler2D tex, out vec4 col)
 
 [declaration: "polygon_layout"]
 {{
+  float GetPolygonFunction(vec2 pos, float left_x, vec2 left_y_range, float right_x, vec2 right_y_range)
+  {
+    if(pos.x >= left_x && pos.x < right_x)
+    {
+      //return 1.0f;
+      float x_ratio = (pos.x - left_x) / (right_x - left_x);
+      vec2 y_range = mix(left_y_range, right_y_range, x_ratio);
+      if(pos.y >= y_range.x && pos.y < y_range.y) return 1.0f;
+    }
+    return 0.0f;
+  }
+
   float GetProbeFunction(
     vec2 pos,
     int line_idx,
     float probe_idxf,
     float dir_idxf,
     uint probe_spacing,
-    uint line_spacing,
-    uint dirs_count)
+    uint line_spacing)
   {
     float left_line_x = float(line_idx) * float(line_spacing);
     vec2 left_line_y_range = (vec2(probe_idxf) + vec2(0.0f, 1.0f)) * float(probe_spacing);
     bool is_extended_line = (line_idx % 2) == 0;
-    vec2 right_line_y_range = (vec2(probe_idxf) + (vec2(dir_idxf) + vec2(0.0f, 1.0f)) * is_extended_line ? 4.0f : 2.0f) * float(probe_spacing);
-    return GetPolygonFunction();
+    float right_line_x = float(line_idx + (is_extended_line ? 2 : 1)) * float(line_spacing);
+
+    vec2 right_line_y_range = (vec2(probe_idxf) + (vec2(dir_idxf) + vec2(0.0f, 1.0f)) * 2.0f) * float(probe_spacing);
+    return GetPolygonFunction(pos, left_line_x, left_line_y_range, right_line_x, right_line_y_range);
   }
 }}
 [declaration: "utils"]
