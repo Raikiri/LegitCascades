@@ -50,14 +50,29 @@ void RenderGraphMain()
   source_tile_idx.x = SliderInt("Source x", 0, 256, 14);
   source_tile_idx.y = SliderInt("Source y", 0, 256, 7);
 
-  ProbeLayoutTestShader(
+  LoadCascade(
+    c0_probe_spacing,
+    c0_line_spacing,
+    c0_dirs_count,
+    0,
+    extended_cascades[0]);
+
+  LoadCheckerboard(GetSwapchainImage(), c0_probe_spacing);
+  GatherCascade(
+    c0_probe_spacing,
+    c0_line_spacing,
+    c0_dirs_count,
+    0,
+    GetSwapchainImage());
+
+  /*ProbeLayoutTestShader(
     c0_probe_spacing,
     c0_line_spacing,
     test_cascade_idx,
     test_line_idx,
     test_probe_idx,
     test_dir_idx,
-    source_tile_idx, GetSwapchainImage());
+    source_tile_idx, GetSwapchainImage());*/
 
   Text("Fps: " + GetSmoothFps());
 }}
@@ -80,11 +95,6 @@ void ProbeLayoutTestShader(
   uint probe_spacing = c0_probe_spacing;
   uint line_spacing = c0_line_spacing << test_cascade_idx;
 
-  /*int test_line_idx = 3;
-  float test_probe_idx = 0.0f;
-  float test_dir_idx = 0.0f;*/
-  float preceding_falloff_dist = float(c0_probe_spacing) * float(1u << test_cascade_idx);
-  float falloff_scale = float(c0_probe_spacing);
 
   float probe_func = GetProbeFunction(
     gl_FragCoord.xy,
@@ -100,6 +110,63 @@ void ProbeLayoutTestShader(
   {
     color += vec4(0.0f, 1.0f, 0.0f, 0.0f) * 0.1f * mix(falloff_range.x, falloff_range.y, probe_func);
   }
+}}
+
+[include: "config", "pcg", "utils", "polygon_layout"]
+[blendmode: additive]
+void GatherCascade(
+  uint c0_probe_spacing,
+  uint c0_line_spacing,
+  uint c0_dirs_count,
+  uint cascade_idx,
+  out vec4 color)
+{{
+  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
+  color = vec4(0.0f);
+
+  uint probe_spacing = c0_probe_spacing;
+  uint line_spacing = c0_line_spacing << cascade_idx;
+  uint dirs_count = c0_dirs_count >> cascade_idx;
+
+
+  /*float probe_func = GetProbeFunction(
+    gl_FragCoord.xy,
+    test_line_idx,
+    float(test_probe_idx),
+    float(test_dir_idx),
+    probe_spacing,
+    line_spacing);
+  
+  vec2 falloff_range = GetCascadeFalloffRange(test_cascade_idx);
+
+  if(probe_func >= -0.5f)
+  {
+    color += vec4(0.0f, 1.0f, 0.0f, 0.0f) * 0.1f * mix(falloff_range.x, falloff_range.y, probe_func);
+  }*/
+}}
+
+[include: "config", "polygon_layout"]
+void LoadCascade(
+  uint c0_probe_spacing,
+  uint c0_line_spacing,
+  uint c0_dirs_count,
+  uint cascade_idx,
+  out vec4 color)
+{{
+  uint dirs_count = c0_dirs_count << cascade_idx;
+  ivec2 atlas_texel_idx = ivec2(gl_FragCoord.xy);
+  PolygonIdx polygon_idx = AtlasTexelIdxToPolygonIdx(atlas_texel_idx, dirs_count);
+
+  color = vec4(0.0f);
+  if(polygon_idx.line_idx == 3 && polygon_idx.probe_idx == 2 && polygon_idx.dir_idx == 0)
+  {
+    color = vec4(1.0f, 0.5f, 0.0f, 1.0f);
+  }
+}}
+
+void LoadCheckerboard(out vec4 col, uint spacing)
+{{
+  col = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 }}
 
 void ClearShader(out vec4 col)
@@ -122,7 +189,6 @@ void CopyShader(sampler2D tex, out vec4 col)
   {
     if(pos.x >= left_x && pos.x < right_x)
     {
-      //return 1.0f;
       float x_ratio = (pos.x - left_x) / (right_x - left_x);
       vec2 y_range = mix(left_y_range, right_y_range, x_ratio);
       if(pos.y >= y_range.x && pos.y < y_range.y)
@@ -146,8 +212,24 @@ void CopyShader(sampler2D tex, out vec4 col)
     bool is_extended_line = (line_idx % 2) == 0;
     float right_line_x = float(line_idx + (is_extended_line ? 2 : 1)) * float(line_spacing);
 
-    vec2 right_line_y_range = (vec2(probe_idxf) + (vec2(dir_idxf) + vec2(0.0f, 1.0f)) * 2.0f) * float(probe_spacing);
+    vec2 right_line_y_range = (vec2(probe_idxf) + vec2(dir_idxf) + vec2(0.0f, 2.0f)) * float(probe_spacing);
     return GetPolygonFunction(pos, left_line_x, left_line_y_range, right_line_x, right_line_y_range);
+  }
+
+  struct PolygonIdx
+  {
+    int line_idx;
+    int probe_idx;
+    int dir_idx;
+  };
+
+  PolygonIdx AtlasTexelIdxToPolygonIdx(ivec2 texel_idx, uint dirs_count)
+  {
+    PolygonIdx polygon_idx;
+    polygon_idx.line_idx = texel_idx.x / int(dirs_count);
+    polygon_idx.probe_idx = texel_idx.y;
+    polygon_idx.dir_idx = texel_idx.x % int(dirs_count);
+    return polygon_idx;
   }
 }}
 [declaration: "utils"]
