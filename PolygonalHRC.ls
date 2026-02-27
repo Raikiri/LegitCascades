@@ -53,7 +53,6 @@ void RenderGraphMain()
   Text("Fps: " + GetSmoothFps());
 }}
 
-
 [include: "config", "pcg", "utils"]
 void ProbeLayoutTestShader(
   uint c0_probe_spacing,
@@ -77,6 +76,24 @@ void CopyShader(sampler2D tex, out vec4 col)
   col = texelFetch(tex, ivec2(gl_FragCoord.xy), 0);
 }}
 
+[declaration: "polygon_layout"]
+{{
+  float GetProbeFunction(
+    vec2 pos,
+    int line_idx,
+    float probe_idxf,
+    float dir_idxf,
+    uint probe_spacing,
+    uint line_spacing,
+    uint dirs_count)
+  {
+    float left_line_x = float(line_idx) * float(line_spacing);
+    vec2 left_line_y_range = (vec2(probe_idxf) + vec2(0.0f, 1.0f)) * float(probe_spacing);
+    bool is_extended_line = (line_idx % 2) == 0;
+    vec2 right_line_y_range = (vec2(probe_idxf) + (vec2(dir_idxf) + vec2(0.0f, 1.0f)) * is_extended_line ? 4.0f : 2.0f) * float(probe_spacing);
+    return GetPolygonFunction();
+  }
+}}
 [declaration: "utils"]
 {{
   float GetCheckerboard(ivec2 p)
