@@ -133,7 +133,13 @@ void ExtendCascade(
   PolygonIdx dst_polygon_idx = AtlasTexelIdxToPolygonIdx(dst_atlas_texel_idx, dst_dirs_count);
 
   vec4 res_radiance = vec4(0.0f);
-  
+  /*int src_line_ids[2];
+  src_line_ids[0] = dst_line_idx * 2 - 1;
+  src_line_ids[1] = dst_line_idx * 2 - 2;
+  //int src_probe_ids = 
+  int src_probe_idx = dst_probe_idx
+  ivec2 texel_idx = PolygonIdxToAtlasTexelIdx(line_idx, probe_idx, dir_idx, dirs_count);*/
+
   dst_color = res_radiance;
 }}
 
