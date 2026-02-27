@@ -6,7 +6,7 @@
 }}
 
 [rendergraph]
-[include: "fps"]
+[include: "fps", "config"]
 void RenderGraphMain()
 {{
   uvec2 viewport_size = GetSwapchainImage().GetSize();
@@ -21,39 +21,50 @@ void RenderGraphMain()
   array<Image> merged_cascades;
 
   uint c0_probe_spacing = 30;
-  uint c0_probe_points_count = 20;
+  uint c0_line_spacing = 20;
+  uint c0_dirs_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
-  uint curr_probe_points_count = c0_probe_points_count;
+  uint curr_line_spacing = c0_line_spacing;
+  uint curr_dirs_count = c0_dirs_count;
 
-  uvec2 c0_probes_count = viewport_size / c0_probe_spacing;
   for(uint cascade_idx = 0; cascade_idx < cascades_count; cascade_idx++)
   {
-    uvec2 curr_probes_count = (viewport_size + uvec2(curr_probe_spacing - 1)) / curr_probe_spacing;
-    uvec2 curr_size = curr_probes_count * curr_probe_points_count;
+    uint curr_lines_count = (viewport_size.x + curr_line_spacing - 1) / curr_line_spacing;
+    uint curr_probes_count = (viewport_size.y + curr_probe_spacing - 1) / curr_probe_spacing;
+
+    uvec2 curr_size = uvec2(curr_lines_count * curr_dirs_count, curr_probes_count);
     extended_cascades.insertLast(GetImage(curr_size, rgba16f));
     merged_cascades.insertLast(GetImage(curr_size, rgba16f));
-    curr_probe_spacing *= 2;
-    curr_probe_points_count *= 2;
-    //Text("c" + to_string(cascade_idx) + " size" +  to_string(curr_size));
+    curr_line_spacing *= 2;
+    curr_dirs_count *= 2;
+    Text("c" + to_string(cascade_idx) + " size" +  to_string(curr_size));
   }
 
   ivec2 source_tile_idx;
   source_tile_idx.x = SliderInt("Source x", 0, 256, 14);
   source_tile_idx.y = SliderInt("Source y", 0, 256, 7);
-  ProbeLayoutTestShader(source_tile_idx, GetSwapchainImage());
+  ProbeLayoutTestShader(
+    c0_probe_spacing,
+    c0_line_spacing,
+    c0_dirs_count,
+    source_tile_idx, GetSwapchainImage());
 
   Text("Fps: " + GetSmoothFps());
 }}
 
 
-[include: "pcg"]
+[include: "config", "pcg", "utils"]
 void ProbeLayoutTestShader(
+  uint c0_probe_spacing,
+  uint c0_line_spacing,
+  uint c0_dirs_count,
   ivec2 source_tile_idx,
   out vec4 color)
 {{
-  vec2 pixel_pos = gl_FragCoord.xy;
-  color = vec4(1.0f, 0.5f, 0.0f, 1.0f);
+  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
+  ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
+  color = vec4(0.005f) * GetCheckerboard(tile_idx);
 }}
 
 void ClearShader(out vec4 col)
@@ -66,6 +77,13 @@ void CopyShader(sampler2D tex, out vec4 col)
   col = texelFetch(tex, ivec2(gl_FragCoord.xy), 0);
 }}
 
+[declaration: "utils"]
+{{
+  float GetCheckerboard(ivec2 p)
+  {
+    return ((p.x + p.y) % 2 == 0) ? 0.0f : 1.0f;
+  }
+}}
 [declaration: "merging"]
 {{
   vec4 MergeIntervals(vec4 near_interval, vec4 far_interval)
