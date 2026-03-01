@@ -245,7 +245,16 @@ void ExtendCascade(
   dst_color = res_radiance;
 }}
 
-[include: "config", "pcg", "utils", "polygon_layout"]
+[declaration: "euclidean_fix"]
+{{
+  float GetEuclideanFluxCorrection(int dir_idx, uint dirs_count)
+  {
+    float tan_ang = (float(dir_idx) + 0.5f) / float(dirs_count);
+    float ang = atan(tan_ang);
+    return cos(ang);
+  }
+}}
+[include: "config", "pcg", "utils", "polygon_layout", "euclidean_fix"]
 [blendmode: additive]
 void GatherCascade(
   uint c0_probe_spacing,
@@ -295,7 +304,7 @@ void GatherCascade(
           float cascade_radiance = mix(falloff_range.x, falloff_range.y, probe_func);
           vec4 cascade_texel = texelFetch(cascade_atlas_tex, texel_idx, 0);
           float dir_tint = ((dir_idx % 2) == 0 ? 1.0f : 0.0f) * dir_tint_amount + (1.0f - dir_tint_amount);
-          fluence += cascade_tint * dir_tint * cascade_radiance * cascade_texel;
+          fluence += cascade_tint * dir_tint * cascade_radiance * cascade_texel * GetEuclideanFluxCorrection(dir_idx, dirs_count);
         }
       }
     }
@@ -324,7 +333,7 @@ void GatherCascade(
             float cascade_radiance = mix(falloff_range.x, falloff_range.y, probe_func);
             vec4 cascade_texel = texelFetch(cascade_atlas_tex, texel_idx, 0);
             float dir_tint = ((dir_idx % 2) == 0 ? 1.0f : 0.0f) * dir_tint_amount + (1.0f - dir_tint_amount);
-            fluence += cascade_tint * dir_tint * cascade_radiance * cascade_texel;
+            fluence += cascade_tint * dir_tint * cascade_radiance * cascade_texel * GetEuclideanFluxCorrection(dir_idx, dirs_count);
           }
         }
       }
