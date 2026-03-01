@@ -20,8 +20,8 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 30;
-  uint c0_line_spacing = 30;
+  uint c0_probe_spacing = 10;
+  uint c0_line_spacing = 10;
   uint c0_dirs_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
@@ -251,7 +251,7 @@ void ExtendCascade(
   {
     float tan_ang = (float(dir_idx) + 0.5f) / float(dirs_count);
     float ang = atan(tan_ang);
-    return cos(ang);
+    return 1.0f/*cos(ang)*/;
   }
 }}
 [include: "config", "pcg", "utils", "polygon_layout", "euclidean_fix"]
