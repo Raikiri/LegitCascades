@@ -41,14 +41,18 @@ void RenderGraphMain()
     //Text("c" + to_string(cascade_idx) + " size" +  to_string(curr_size));
   }
 
-  uint test_line_idx = SliderInt("line_idx", 0, 32, 0);
+  LoadCheckerboard(GetSwapchainImage(), c0_probe_spacing);
+
+  float frustum_shrinkening = SliderFloat("shrinkage", 0.0f, 2.0f, 1.0f);
+
+  /*uint test_line_idx = SliderInt("line_idx", 0, 32, 0);
   uint test_probe_idx = SliderInt("probe_idx", 0, 16, 0);
   uint test_probes_count = SliderInt("probes_count", 1, 16, 1);
 
-  float frustum_shrinkening = SliderFloat("shrinkage", 0.0f, 2.0f, 1.0f);
   float cascade_tint = SliderFloat("tint", 0.0f, 1.0f, 1.0f);
 
-  LoadCascade(
+
+  LoadDualCascade(
     c0_probe_spacing,
     c0_line_spacing,
     c0_dirs_count,
@@ -58,8 +62,7 @@ void RenderGraphMain()
     0,
     test_probes_count,
     extended_cascades[0]);
-  LoadCheckerboard(GetSwapchainImage(), c0_probe_spacing);
-  GatherCascade(
+  GatherDualCascade(
     c0_probe_spacing,
     c0_line_spacing,
     c0_dirs_count,
@@ -73,7 +76,7 @@ void RenderGraphMain()
   uint used_cascades_count = SliderInt("cascades_count", 1, cascades_count, 6);
   for(uint src_cascade_idx = 0; src_cascade_idx < used_cascades_count - 1; src_cascade_idx++)
   {
-    ExtendCascade(
+    ExtendDualCascade(
       c0_probe_spacing,
       c0_line_spacing,
       c0_dirs_count,
@@ -83,7 +86,7 @@ void RenderGraphMain()
       extended_cascades[src_cascade_idx + 1]);
 
 
-    GatherCascade(
+    GatherDualCascade(
       c0_probe_spacing,
       c0_line_spacing,
       c0_dirs_count,
@@ -93,7 +96,48 @@ void RenderGraphMain()
       cascade_tint,
       extended_cascades[src_cascade_idx + 1],
       GetSwapchainImage());
-  }
+  }*/
+
+  float source_x = SliderFloat("source_x", 0.0f, 32.0f, 10.0f);
+  float source_y = SliderFloat("source_y", 0.0f, 16.0f, 10.0f);
+  
+  int test_cascade_idx = SliderInt("cascade_idx", 0, 10, 0);
+
+  LoadPrimalCascade(
+    c0_probe_spacing,
+    c0_line_spacing,
+    c0_dirs_count,
+    viewport_size,
+    test_cascade_idx,
+    vec2(source_x, source_y),
+    extended_cascades[test_cascade_idx]);
+
+  /*GatherDualCascade(
+    c0_probe_spacing,
+    c0_line_spacing,
+    c0_dirs_count,
+    viewport_size,
+    test_cascade_idx,
+    frustum_shrinkening,
+    1.0f,
+    extended_cascades[test_cascade_idx],
+    GetSwapchainImage());*/
+  GatherPrimalCascade(
+    c0_probe_spacing,
+    c0_line_spacing,
+    c0_dirs_count,
+    viewport_size,
+    test_cascade_idx,
+    frustum_shrinkening,
+    1.0f,
+    extended_cascades[test_cascade_idx],
+    GetSwapchainImage());
+  
+  RenderPoint(
+    c0_probe_spacing,
+    vec2(source_x, source_y),
+    GetSwapchainImage()
+  );
 
   /*int test_cascade_idx = SliderInt("cascade_idx", 0, 10, 0);
   int test_dir_idx = SliderInt("dir_idx", 0, 10, 0);
@@ -113,7 +157,7 @@ void RenderGraphMain()
 }}
 
 [include: "config", "pcg", "utils", "polygon_layout"]
-void ExtendCascade(
+void ExtendDualCascade(
   uint c0_probe_spacing,
   uint c0_line_spacing,
   uint c0_dirs_count,
@@ -245,9 +289,51 @@ void ExtendCascade(
   dst_color = res_radiance;
 }}
 
+
+
 [include: "config", "pcg", "utils", "polygon_layout"]
 [blendmode: additive]
-void GatherCascade(
+void GatherPrimalCascade(
+  uint c0_probe_spacing,
+  uint c0_line_spacing,
+  uint c0_dirs_count,
+  uvec2 viewport_size,
+  uint cascade_idx,
+  float frustum_shrinkage,
+  float cascade_tint_amount,
+  sampler2D cascade_atlas_tex,
+  out vec4 color)
+{{
+  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
+  color = vec4(0.0f);
+
+  uint probe_spacing = c0_probe_spacing;
+  uint probes_count = viewport_size.y / probe_spacing;
+  uint line_tile_spacing = 1u << cascade_idx;
+  uint lines_count = viewport_size.x / probe_spacing;
+  uint dirs_count = c0_dirs_count << cascade_idx;
+
+
+  ivec2 tile_idx = pixel_idx / int(probe_spacing);
+  if(tile_idx.x % int(line_tile_spacing) == 0)
+  {
+    int line_idx = tile_idx.x / int(line_tile_spacing) + 1;
+    int probe_idx = tile_idx.y;
+    if(line_idx >= 0 && line_idx < int(lines_count) && probe_idx >= 0 && probe_idx < int(probes_count))
+    {
+      for(int dir_idx = 0; dir_idx < int(dirs_count); dir_idx++)
+      {
+        ivec2 texel_idx = PolygonIdxToAtlasTexelIdx(line_idx, probe_idx, dir_idx, true, dirs_count);
+        vec4 cascade_texel = texelFetch(cascade_atlas_tex, texel_idx, 0);
+        color += cascade_texel * 0.1f;
+      }
+    }
+  }
+}}
+
+[include: "config", "pcg", "utils", "polygon_layout"]
+[blendmode: additive]
+void GatherDualCascade(
   uint c0_probe_spacing,
   uint c0_line_spacing,
   uint c0_dirs_count,
@@ -334,7 +420,45 @@ void GatherCascade(
 }}
 
 [include: "config", "polygon_layout"]
-void LoadCascade(
+void LoadPrimalCascade(
+  uint c0_probe_spacing,
+  uint c0_line_spacing,
+  uint c0_dirs_count,
+  uvec2 viewport_size,
+  uint test_cascade_idx,
+  vec2 light_pos,
+  out vec4 color)
+{{
+  uint dirs_count = c0_dirs_count << test_cascade_idx;
+  uint probe_spacing = c0_probe_spacing;
+  uint probes_count = viewport_size.y / probe_spacing;
+  uint line_spacing = c0_line_spacing << test_cascade_idx;
+  uint lines_count = viewport_size.x / probe_spacing;
+  vec2 falloff_range = GetCascadeFalloffRange(test_cascade_idx);
+
+  ivec2 atlas_texel_idx = ivec2(gl_FragCoord.xy);
+  PolygonIdx polygon_idx = AtlasTexelIdxToPolygonIdx(atlas_texel_idx, dirs_count);
+
+  color = vec4(0.0f);
+  float probe_func = GetProbeFunction(
+    light_pos * float(probe_spacing),
+    polygon_idx.line_idx,
+    float(polygon_idx.probe_idx),
+    float(polygon_idx.dir_idx),
+    polygon_idx.is_frustum,
+    probe_spacing,
+    line_spacing,
+    0.0f);
+  if(probe_func > -0.5f && polygon_idx.is_frustum)
+  {
+    float cascade_radiance = 1.0f;// mix(falloff_range.x, falloff_range.y, probe_func);
+    color = vec4(vec3(cascade_radiance), 0.0f);
+  }
+}}
+
+
+[include: "config", "polygon_layout"]
+void LoadDualCascade(
   uint c0_probe_spacing,
   uint c0_line_spacing,
   uint c0_dirs_count,
@@ -397,7 +521,7 @@ void LoadCheckerboard(out vec4 col, uint spacing)
 {{
   ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
   
-  col = vec4(vec3(0.005f), 1.0f) * GetCheckerboard(pixel_idx / int(spacing));
+  col = vec4(vec3(0.001f), 1.0f) * GetCheckerboard(pixel_idx / int(spacing));
 }}
 
 void ClearShader(out vec4 col)
@@ -408,6 +532,17 @@ void ClearShader(out vec4 col)
 void CopyShader(sampler2D tex, out vec4 col)
 {{
   col = texelFetch(tex, ivec2(gl_FragCoord.xy), 0);
+}}
+
+[blendmode: additive]
+void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
+{{
+  vec2 light_pixel_pos = light_pos * vec2(c0_probe_spacing);
+  color = vec4(0.0f);
+  if(length(light_pixel_pos - gl_FragCoord.xy) < 2.0f)
+  {
+    color = vec4(1.0f);
+  }
 }}
 
 [declaration: "polygon_layout"]
