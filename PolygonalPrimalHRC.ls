@@ -15,13 +15,13 @@ void RenderGraphMain()
   //c0_size.x = SliderInt("c0_size.x", 1, 1024, 256);
   //c0_size.y = size.y * c0_size.x / size.x;
 
-  const int cascades_count = 9;
+  const int cascades_count = 6;
 
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 30;
-  uint c0_line_spacing = 30;
+  uint c0_probe_spacing = 10;
+  uint c0_line_spacing = 10;
   uint c0_dirs_count = 1;
 
   uint curr_probe_spacing = c0_probe_spacing;
@@ -98,19 +98,21 @@ void RenderGraphMain()
       GetSwapchainImage());
   }*/
 
-  float source_x = SliderFloat("source_x", 0.0f, 32.0f, 10.0f);
-  float source_y = SliderFloat("source_y", 0.0f, 16.0f, 10.0f);
+  float source_x = SliderFloat("source_x", 0.0f, 100.0f, 10.0f) + 70.0f;
+  float source_y = SliderFloat("source_y", 0.0f, 100.0f, 10.0f) + 30.0f;
   
-  int test_cascade_idx = SliderInt("cascade_idx", 0, 10, 0);
 
-  LoadPrimalCascade(
-    c0_probe_spacing,
-    c0_line_spacing,
-    c0_dirs_count,
-    viewport_size,
-    test_cascade_idx,
-    vec2(source_x, source_y),
-    extended_cascades[test_cascade_idx]);
+  for(uint dst_cascade_idx = 0; dst_cascade_idx < cascades_count; dst_cascade_idx++)
+  {
+    LoadPrimalCascade(
+      c0_probe_spacing,
+      c0_line_spacing,
+      c0_dirs_count,
+      viewport_size,
+      dst_cascade_idx,
+      vec2(source_x, source_y),
+      extended_cascades[dst_cascade_idx]);
+  }
 
   /*GatherDualCascade(
     c0_probe_spacing,
@@ -122,6 +124,25 @@ void RenderGraphMain()
     1.0f,
     extended_cascades[test_cascade_idx],
     GetSwapchainImage());*/
+  int test_cascade_idx = SliderInt("cascade_idx", 0, 10, 0);
+
+  for(uint cascade_num = 1; cascade_num < cascades_count; cascade_num++)
+  {
+    uint dst_cascade_idx = cascades_count - 1 - cascade_num;
+    uint src_cascade_idx = dst_cascade_idx + 1;
+
+    ExtendPrimalCascade(
+      c0_probe_spacing,
+      c0_line_spacing,
+      c0_dirs_count,
+      viewport_size,
+      dst_cascade_idx,
+      extended_cascades[src_cascade_idx],
+      extended_cascades[dst_cascade_idx]);
+  }
+
+
+
   GatherPrimalCascade(
     c0_probe_spacing,
     c0_line_spacing,
@@ -290,6 +311,119 @@ void ExtendDualCascade(
 }}
 
 
+[include: "config", "pcg", "utils", "polygon_layout"]
+[blendmode: additive]
+void ExtendPrimalCascade(
+  uint c0_probe_spacing,
+  uint c0_line_spacing,
+  uint c0_dirs_count,
+  uvec2 viewport_size,
+  uint dst_cascade_idx,
+  sampler2D src_cascade_atlas_tex,
+  out vec4 dst_color)
+{{
+  uint src_cascade_idx = dst_cascade_idx + 1u;
+
+  ivec2 dst_atlas_texel_idx = ivec2(gl_FragCoord.xy);
+  uint dst_dirs_count = c0_dirs_count << dst_cascade_idx;
+  PolygonIdx dst_polygon_idx = AtlasTexelIdxToPolygonIdx(dst_atlas_texel_idx, dst_dirs_count);
+
+  uint src_dirs_count = c0_dirs_count << src_cascade_idx;
+  vec4 res_radiance = vec4(0.0f);
+
+  bool is_dst_extended = (dst_polygon_idx.line_idx % 2) == 0;
+  int src_line_idx = dst_polygon_idx.line_idx / 2 + 1;
+  if(dst_polygon_idx.is_frustum)
+  {
+    if(!is_dst_extended)
+    {
+      {
+        int src_dir_idx = dst_polygon_idx.dir_idx * 2;
+        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx;
+
+        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
+        {
+          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
+          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
+          res_radiance += src_radiance;
+        }
+      }
+      {
+        int src_dir_idx = dst_polygon_idx.dir_idx * 2 + 1;
+        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx + 1;
+
+        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
+        {
+          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
+          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
+          res_radiance += src_radiance;
+        }
+      }
+    }else
+    {
+      {
+        int src_dir_idx = dst_polygon_idx.dir_idx * 2;
+        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx * 2;
+
+        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
+        {
+          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
+          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
+          res_radiance += src_radiance * 1.0f;
+        }
+      }
+      {
+        int src_dir_idx = dst_polygon_idx.dir_idx * 2 + 1;
+        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx * 2 + 1;
+
+        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
+        {
+          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, false, src_dirs_count);
+          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
+          res_radiance += src_radiance * 1.0f;
+        }
+      }
+      {
+        int src_dir_idx = dst_polygon_idx.dir_idx * 2 + 1;
+        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx * 2 + 2;
+
+        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
+        {
+          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
+          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
+          res_radiance += src_radiance * 1.0f;
+        }
+      }
+    }
+  }else
+  {
+    if(!is_dst_extended)
+    {
+      int src_dir_idx = dst_polygon_idx.dir_idx * 2;
+      int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx;
+
+      if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
+      {
+        ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, false, src_dirs_count);
+        vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
+        res_radiance += src_radiance * 1.0f;
+      }
+    }else
+    {
+      int src_dir_idx = dst_polygon_idx.dir_idx * 2;
+      int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx * 2;
+
+      if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
+      {
+        ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, false, src_dirs_count);
+        vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
+        res_radiance += src_radiance * 1.0f;
+      }
+    }
+  }
+
+  dst_color = res_radiance;
+}}
 
 [include: "config", "pcg", "utils", "polygon_layout"]
 [blendmode: additive]
@@ -325,7 +459,8 @@ void GatherPrimalCascade(
       {
         ivec2 texel_idx = PolygonIdxToAtlasTexelIdx(line_idx, probe_idx, dir_idx, true, dirs_count);
         vec4 cascade_texel = texelFetch(cascade_atlas_tex, texel_idx, 0);
-        color += cascade_texel * 0.1f;
+        bool is_extended =  ((line_idx % 2) == 0);
+        color += cascade_texel * 0.1f;// * (is_extended ? vec4(1.0f, 0.0f, 0.0f, 1.0f) : vec4(0.0f, 1.0f, 0.0f, 1.0f));
       }
     }
   }
@@ -449,9 +584,9 @@ void LoadPrimalCascade(
     probe_spacing,
     line_spacing,
     0.0f);
-  if(probe_func > -0.5f && polygon_idx.is_frustum)
+  if(probe_func > -0.5f)
   {
-    float cascade_radiance = 1.0f;// mix(falloff_range.x, falloff_range.y, probe_func);
+    float cascade_radiance = mix(falloff_range.x, falloff_range.y, probe_func);
     color = vec4(vec3(cascade_radiance), 0.0f);
   }
 }}
