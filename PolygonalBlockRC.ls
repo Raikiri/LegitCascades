@@ -47,7 +47,7 @@ void RenderGraphMain()
   int test_probe_idx_x = SliderInt("probe_idx_x", 0, 100, 0);
   int test_probe_idx_y = SliderInt("probe_idx_y", 0, 100, 0);
   float shrinkage = SliderFloat("shrinkage", 0.0f, 5.0f, 1.0f);
-  int connect_lines = SliderInt("connect_lines", 0, 1, 0);
+  int connect_lines = SliderInt("connect_lines", 0, 1, 1);
 
   ProbeLayoutTestShader(
     c0_probe_spacing,
