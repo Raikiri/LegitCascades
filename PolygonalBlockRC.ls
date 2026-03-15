@@ -22,13 +22,13 @@ void RenderGraphMain()
 
   uint c0_probe_spacing = 10;
   uint c0_line_spacing = 10;
-  uint c0_dirs_count = 1;
+  uint c0_dirs_count = SliderInt("c0_dirs_count/4", 1, 4, 1) * 4;
 
   uint curr_probe_spacing = c0_probe_spacing;
   uint curr_line_spacing = c0_line_spacing;
   uint curr_dirs_count = c0_dirs_count;
 
-  for(uint cascade_idx = 0; cascade_idx < cascades_count; cascade_idx++)
+  /*for(uint cascade_idx = 0; cascade_idx < cascades_count; cascade_idx++)
   {
     uint curr_lines_count = (viewport_size.x + curr_line_spacing - 1) / curr_line_spacing;
     uint curr_probes_count = (viewport_size.y + curr_probe_spacing - 1) / curr_probe_spacing;
@@ -39,615 +39,79 @@ void RenderGraphMain()
     curr_line_spacing *= 2;
     curr_dirs_count *= 2;
     //Text("c" + to_string(cascade_idx) + " size" +  to_string(curr_size));
-  }
+  }*/
 
   LoadCheckerboard(GetSwapchainImage(), c0_probe_spacing);
 
-  float frustum_shrinkening = SliderFloat("shrinkage", 0.0f, 2.0f, 1.0f);
-
-  /*uint test_line_idx = SliderInt("line_idx", 0, 32, 0);
-  uint test_probe_idx = SliderInt("probe_idx", 0, 16, 0);
-  uint test_probes_count = SliderInt("probes_count", 1, 16, 1);
-
-  float cascade_tint = SliderFloat("tint", 0.0f, 1.0f, 1.0f);
-
-
-  LoadDualCascade(
-    c0_probe_spacing,
-    c0_line_spacing,
-    c0_dirs_count,
-    0,
-    test_line_idx,
-    test_probe_idx,
-    0,
-    test_probes_count,
-    extended_cascades[0]);
-  GatherDualCascade(
-    c0_probe_spacing,
-    c0_line_spacing,
-    c0_dirs_count,
-    viewport_size,
-    0,
-    frustum_shrinkening,
-    cascade_tint,
-    extended_cascades[0],
-    GetSwapchainImage());
-
-  uint used_cascades_count = SliderInt("cascades_count", 1, cascades_count, 6);
-  for(uint src_cascade_idx = 0; src_cascade_idx < used_cascades_count - 1; src_cascade_idx++)
-  {
-    ExtendDualCascade(
-      c0_probe_spacing,
-      c0_line_spacing,
-      c0_dirs_count,
-      viewport_size,
-      src_cascade_idx,
-      extended_cascades[src_cascade_idx],
-      extended_cascades[src_cascade_idx + 1]);
-
-
-    GatherDualCascade(
-      c0_probe_spacing,
-      c0_line_spacing,
-      c0_dirs_count,
-      viewport_size,
-      src_cascade_idx + 1,
-      frustum_shrinkening,
-      cascade_tint,
-      extended_cascades[src_cascade_idx + 1],
-      GetSwapchainImage());
-  }*/
-
-  float source_x = SliderFloat("source_x", 0.0f, 100.0f, 10.0f) + 70.0f;
-  float source_y = SliderFloat("source_y", 0.0f, 100.0f, 10.0f) + 30.0f;
-  
-
-  for(uint dst_cascade_idx = 0; dst_cascade_idx < cascades_count; dst_cascade_idx++)
-  {
-    LoadPrimalCascade(
-      c0_probe_spacing,
-      c0_line_spacing,
-      c0_dirs_count,
-      viewport_size,
-      dst_cascade_idx,
-      vec2(source_x, source_y),
-      extended_cascades[dst_cascade_idx]);
-  }
-
-  /*GatherDualCascade(
-    c0_probe_spacing,
-    c0_line_spacing,
-    c0_dirs_count,
-    viewport_size,
-    test_cascade_idx,
-    frustum_shrinkening,
-    1.0f,
-    extended_cascades[test_cascade_idx],
-    GetSwapchainImage());*/
-  int test_cascade_idx = SliderInt("cascade_idx", 0, 10, 0);
-
-  for(uint cascade_num = 1; cascade_num < cascades_count; cascade_num++)
-  {
-    uint dst_cascade_idx = cascades_count - 1 - cascade_num;
-    uint src_cascade_idx = dst_cascade_idx + 1;
-
-    ExtendPrimalCascade(
-      c0_probe_spacing,
-      c0_line_spacing,
-      c0_dirs_count,
-      viewport_size,
-      dst_cascade_idx,
-      extended_cascades[src_cascade_idx],
-      extended_cascades[dst_cascade_idx]);
-  }
-
-
-
-  GatherPrimalCascade(
-    c0_probe_spacing,
-    c0_line_spacing,
-    c0_dirs_count,
-    viewport_size,
-    test_cascade_idx,
-    frustum_shrinkening,
-    1.0f,
-    extended_cascades[test_cascade_idx],
-    GetSwapchainImage());
-  
-  RenderPoint(
-    c0_probe_spacing,
-    vec2(source_x, source_y),
-    GetSwapchainImage()
-  );
-
-  /*int test_cascade_idx = SliderInt("cascade_idx", 0, 10, 0);
-  int test_dir_idx = SliderInt("dir_idx", 0, 10, 0);
-  int test_is_frustum = SliderInt("is_frustum", 0, 1, 1);
+  float length_scale = SliderFloat("length_scale", 0.0f, 5.0f, 1.0f);
+  int test_probe_idx_x = SliderInt("probe_idx_x", 0, 100, 0);
+  int test_probe_idx_y = SliderInt("probe_idx_y", 0, 100, 0);
+  float shrinkage = SliderFloat("shrinkage", 0.0f, 5.0f, 1.0f);
+  int connect_lines = SliderInt("connect_lines", 0, 1, 0);
 
   ProbeLayoutTestShader(
     c0_probe_spacing,
-    c0_line_spacing,
-    test_cascade_idx,
-    test_line_idx,
-    test_probe_idx,
-    test_dir_idx,
-    test_is_frustum,
-    GetSwapchainImage());*/
+    c0_dirs_count,
+    ivec2(test_probe_idx_x, test_probe_idx_y),
+    length_scale,
+    shrinkage,
+    connect_lines,
+    GetSwapchainImage());
 
   Text("Fps: " + GetSmoothFps());
 }}
 
-[include: "config", "pcg", "utils", "polygon_layout"]
-void ExtendDualCascade(
-  uint c0_probe_spacing,
-  uint c0_line_spacing,
-  uint c0_dirs_count,
-  uvec2 viewport_size,
-  uint src_cascade_idx,
-  sampler2D src_cascade_atlas_tex,
-  out vec4 dst_color)
-{{
-  ivec2 dst_atlas_texel_idx = ivec2(gl_FragCoord.xy);
-
-  uint dst_cascade_idx = src_cascade_idx + 1u;
-  uint dst_dirs_count = c0_dirs_count << dst_cascade_idx;
-  PolygonIdx dst_polygon_idx = AtlasTexelIdxToPolygonIdx(dst_atlas_texel_idx, dst_dirs_count);
-
-  uint src_dirs_count = c0_dirs_count << src_cascade_idx;
-  vec4 res_radiance = vec4(0.0f);
-
-  if(dst_polygon_idx.is_frustum)
-  {
-    {
-      int src_line_idx = dst_polygon_idx.line_idx * 2 - 2;
-      {
-        if((dst_polygon_idx.dir_idx % 2) == 0)
-        {
-          int src_dir_idx = dst_polygon_idx.dir_idx / 2;
-          int src_probe_idx = dst_polygon_idx.probe_idx - dst_polygon_idx.dir_idx;
-
-          if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-          {
-            ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-            vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-            res_radiance += src_radiance;
-          }
-        }
-        if((dst_polygon_idx.dir_idx % 2) == 1)
-        {
-          int src_dir_idx = dst_polygon_idx.dir_idx / 2;
-          int src_probe_idx = dst_polygon_idx.probe_idx - (dst_polygon_idx.dir_idx + 1);
-
-          if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-          {
-            ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-            vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-            res_radiance += src_radiance;
-          }
-        }
-      }
-    }
-    {
-      int src_line_idx = dst_polygon_idx.line_idx * 2 - 1;
-      {
-        if((dst_polygon_idx.dir_idx % 2) == 0)
-        {
-          int src_dir_idx = dst_polygon_idx.dir_idx / 2;
-          int src_probe_idx = dst_polygon_idx.probe_idx - src_dir_idx;
-
-          if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-          {
-            ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-            vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-            res_radiance += src_radiance;
-          }
-        }
-        if((dst_polygon_idx.dir_idx % 2) == 1)
-        {
-          int src_dir_idx = dst_polygon_idx.dir_idx / 2;
-          int src_probe_idx = dst_polygon_idx.probe_idx - src_dir_idx - 1;
-
-          if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-          {
-            ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-            vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-            res_radiance += src_radiance;
-          }
-        }
-      }
-    }
-  }else
-  {
-    {
-      int src_line_idx = dst_polygon_idx.line_idx * 2 - 2;
-      {
-        if(dst_polygon_idx.dir_idx % 2 == 1)
-        {
-          int src_dir_idx = dst_polygon_idx.dir_idx / 2;
-          int src_probe_idx = dst_polygon_idx.probe_idx - dst_polygon_idx.dir_idx - 0;
-
-          if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-          {
-            ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-            vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-            res_radiance += src_radiance;
-          }
-        }
-
-        if(dst_polygon_idx.dir_idx % 2 == 0)
-        {
-          int src_dir_idx = dst_polygon_idx.dir_idx / 2;
-          int src_probe_idx = dst_polygon_idx.probe_idx - dst_polygon_idx.dir_idx;
-
-          if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-          {
-            ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, false, src_dirs_count);
-            vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-            res_radiance += src_radiance;
-          }
-        }
-      }
-    }
-    {
-      int src_line_idx = dst_polygon_idx.line_idx * 2 - 1;
-      {
-        if(dst_polygon_idx.dir_idx % 2 == 0)
-        {
-          int src_dir_idx = dst_polygon_idx.dir_idx / 2;
-          int src_probe_idx = dst_polygon_idx.probe_idx - src_dir_idx;
-
-          if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-          {
-            ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, false, src_dirs_count);
-            vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-            res_radiance += src_radiance;
-          }
-        }
-      }
-    }
-  }
-
-  dst_color = res_radiance;
-}}
-
-
-[include: "config", "pcg", "utils", "polygon_layout"]
-[blendmode: additive]
-void ExtendPrimalCascade(
-  uint c0_probe_spacing,
-  uint c0_line_spacing,
-  uint c0_dirs_count,
-  uvec2 viewport_size,
-  uint dst_cascade_idx,
-  sampler2D src_cascade_atlas_tex,
-  out vec4 dst_color)
-{{
-  uint src_cascade_idx = dst_cascade_idx + 1u;
-
-  ivec2 dst_atlas_texel_idx = ivec2(gl_FragCoord.xy);
-  uint dst_dirs_count = c0_dirs_count << dst_cascade_idx;
-  PolygonIdx dst_polygon_idx = AtlasTexelIdxToPolygonIdx(dst_atlas_texel_idx, dst_dirs_count);
-
-  uint src_dirs_count = c0_dirs_count << src_cascade_idx;
-  vec4 res_radiance = vec4(0.0f);
-
-  bool is_dst_extended = (dst_polygon_idx.line_idx % 2) == 0;
-  int src_line_idx = dst_polygon_idx.line_idx / 2 + 1;
-  if(dst_polygon_idx.is_frustum)
-  {
-    if(!is_dst_extended)
-    {
-      {
-        int src_dir_idx = dst_polygon_idx.dir_idx * 2;
-        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx;
-
-        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-        {
-          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-          res_radiance += src_radiance;
-        }
-      }
-      {
-        int src_dir_idx = dst_polygon_idx.dir_idx * 2 + 1;
-        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx + 1;
-
-        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-        {
-          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-          res_radiance += src_radiance;
-        }
-      }
-    }else
-    {
-      {
-        int src_dir_idx = dst_polygon_idx.dir_idx * 2;
-        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx * 2;
-
-        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-        {
-          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-          res_radiance += src_radiance * 1.0f;
-        }
-      }
-      {
-        int src_dir_idx = dst_polygon_idx.dir_idx * 2 + 1;
-        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx * 2 + 1;
-
-        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-        {
-          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, false, src_dirs_count);
-          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-          res_radiance += src_radiance * 1.0f;
-        }
-      }
-      {
-        int src_dir_idx = dst_polygon_idx.dir_idx * 2 + 1;
-        int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx * 2 + 2;
-
-        if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-        {
-          ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, true, src_dirs_count);
-          vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-          res_radiance += src_radiance * 1.0f;
-        }
-      }
-    }
-  }else
-  {
-    if(!is_dst_extended)
-    {
-      int src_dir_idx = dst_polygon_idx.dir_idx * 2;
-      int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx;
-
-      if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-      {
-        ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, false, src_dirs_count);
-        vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-        res_radiance += src_radiance * 1.0f;
-      }
-    }else
-    {
-      int src_dir_idx = dst_polygon_idx.dir_idx * 2;
-      int src_probe_idx = dst_polygon_idx.probe_idx + dst_polygon_idx.dir_idx * 2;
-
-      if(src_dir_idx >= 0 && src_dir_idx < int(src_dirs_count))
-      {
-        ivec2 src_texel_idx = PolygonIdxToAtlasTexelIdx(src_line_idx, src_probe_idx, src_dir_idx, false, src_dirs_count);
-        vec4 src_radiance = texelFetch(src_cascade_atlas_tex, src_texel_idx, 0);
-        res_radiance += src_radiance * 1.0f;
-      }
-    }
-  }
-
-  dst_color = res_radiance;
-}}
-
-[include: "config", "pcg", "utils", "polygon_layout"]
-[blendmode: additive]
-void GatherPrimalCascade(
-  uint c0_probe_spacing,
-  uint c0_line_spacing,
-  uint c0_dirs_count,
-  uvec2 viewport_size,
-  uint cascade_idx,
-  float frustum_shrinkage,
-  float cascade_tint_amount,
-  sampler2D cascade_atlas_tex,
-  out vec4 color)
-{{
-  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
-  color = vec4(0.0f);
-
-  uint probe_spacing = c0_probe_spacing;
-  uint probes_count = viewport_size.y / probe_spacing;
-  uint line_tile_spacing = 1u << cascade_idx;
-  uint lines_count = viewport_size.x / probe_spacing;
-  uint dirs_count = c0_dirs_count << cascade_idx;
-
-
-  ivec2 tile_idx = pixel_idx / int(probe_spacing);
-  if(tile_idx.x % int(line_tile_spacing) == 0)
-  {
-    int line_idx = tile_idx.x / int(line_tile_spacing) + 1;
-    int probe_idx = tile_idx.y;
-    if(line_idx >= 0 && line_idx < int(lines_count) && probe_idx >= 0 && probe_idx < int(probes_count))
-    {
-      for(int dir_idx = 0; dir_idx < int(dirs_count); dir_idx++)
-      {
-        ivec2 texel_idx = PolygonIdxToAtlasTexelIdx(line_idx, probe_idx, dir_idx, true, dirs_count);
-        vec4 cascade_texel = texelFetch(cascade_atlas_tex, texel_idx, 0);
-        bool is_extended =  ((line_idx % 2) == 0);
-        color += cascade_texel * 0.1f;// * (is_extended ? vec4(1.0f, 0.0f, 0.0f, 1.0f) : vec4(0.0f, 1.0f, 0.0f, 1.0f));
-      }
-    }
-  }
-}}
-
-[include: "config", "pcg", "utils", "polygon_layout"]
-[blendmode: additive]
-void GatherDualCascade(
-  uint c0_probe_spacing,
-  uint c0_line_spacing,
-  uint c0_dirs_count,
-  uvec2 viewport_size,
-  uint cascade_idx,
-  float frustum_shrinkage,
-  float cascade_tint_amount,
-  sampler2D cascade_atlas_tex,
-  out vec4 color)
-{{
-  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
-  color = vec4(0.0f);
-
-  uint probe_spacing = c0_probe_spacing;
-  uint probes_count = viewport_size.y / probe_spacing;
-  uint line_spacing = c0_line_spacing << cascade_idx;
-  uint lines_count = viewport_size.x / probe_spacing;
-  uint dirs_count = c0_dirs_count << cascade_idx;
-
-  vec4 cascade_tint = vec4(mix(vec3(1.0f), hash3i3f(ivec3(cascade_idx, 2, 3)), cascade_tint_amount), 1.0f);
-  float dir_tint_amount = 0.0f;//0.5f;
-  vec2 falloff_range = GetCascadeFalloffRange(cascade_idx);
-
-  vec4 fluence = vec4(0.0f);
-
-  int line_idx = pixel_idx.x / int(line_spacing);
-  for(int probe_idx = 0; probe_idx < int(probes_count); probe_idx++)
-  {
-    for(int dir_idx = 0; dir_idx < int(dirs_count); dir_idx++)
-    {
-      for(int is_frustum = 0; is_frustum < 2; is_frustum++)
-      {
-        ivec2 texel_idx = PolygonIdxToAtlasTexelIdx(line_idx, probe_idx, dir_idx, is_frustum == 1, dirs_count);
-        float probe_func = GetProbeFunction(
-          gl_FragCoord.xy,
-          line_idx,
-          float(probe_idx),
-          float(dir_idx),
-          is_frustum == 1,
-          probe_spacing,
-          line_spacing,
-          frustum_shrinkage);
-        if(probe_func > -0.5f)
-        {
-          float cascade_radiance = mix(falloff_range.x, falloff_range.y, probe_func);
-          vec4 cascade_texel = texelFetch(cascade_atlas_tex, texel_idx, 0);
-          float dir_tint = ((dir_idx % 2) == 0 ? 1.0f : 0.0f) * dir_tint_amount + (1.0f - dir_tint_amount);
-          fluence += cascade_tint * dir_tint * cascade_radiance * cascade_texel;
-        }
-      }
-    }
-  }
-  if(line_idx % 2 == 1)
-  {
-    int extended_line_idx = line_idx - 1;
-    for(int probe_idx = 0; probe_idx < int(probes_count); probe_idx++)
-    {
-      for(int dir_idx = 0; dir_idx < int(dirs_count); dir_idx++)
-      {
-        for(int is_frustum = 0; is_frustum < 2; is_frustum++)
-        {
-          ivec2 texel_idx = PolygonIdxToAtlasTexelIdx(extended_line_idx, probe_idx, dir_idx, is_frustum == 1, dirs_count);
-          float probe_func = GetProbeFunction(
-            gl_FragCoord.xy,
-            extended_line_idx,
-            float(probe_idx),
-            float(dir_idx),
-            is_frustum == 1,
-            probe_spacing,
-            line_spacing,
-            frustum_shrinkage);
-          if(probe_func > -0.5f)
-          {
-            float cascade_radiance = mix(falloff_range.x, falloff_range.y, probe_func);
-            vec4 cascade_texel = texelFetch(cascade_atlas_tex, texel_idx, 0);
-            float dir_tint = ((dir_idx % 2) == 0 ? 1.0f : 0.0f) * dir_tint_amount + (1.0f - dir_tint_amount);
-            fluence += cascade_tint * dir_tint * cascade_radiance * cascade_texel;
-          }
-        }
-      }
-    }
-  }
-  color = fluence;
-}}
-
-[include: "config", "polygon_layout"]
-void LoadPrimalCascade(
-  uint c0_probe_spacing,
-  uint c0_line_spacing,
-  uint c0_dirs_count,
-  uvec2 viewport_size,
-  uint test_cascade_idx,
-  vec2 light_pos,
-  out vec4 color)
-{{
-  uint dirs_count = c0_dirs_count << test_cascade_idx;
-  uint probe_spacing = c0_probe_spacing;
-  uint probes_count = viewport_size.y / probe_spacing;
-  uint line_spacing = c0_line_spacing << test_cascade_idx;
-  uint lines_count = viewport_size.x / probe_spacing;
-  vec2 falloff_range = GetCascadeFalloffRange(test_cascade_idx);
-
-  ivec2 atlas_texel_idx = ivec2(gl_FragCoord.xy);
-  PolygonIdx polygon_idx = AtlasTexelIdxToPolygonIdx(atlas_texel_idx, dirs_count);
-
-  color = vec4(0.0f);
-  float probe_func = GetProbeFunction(
-    light_pos * float(probe_spacing),
-    polygon_idx.line_idx,
-    float(polygon_idx.probe_idx),
-    float(polygon_idx.dir_idx),
-    polygon_idx.is_frustum,
-    probe_spacing,
-    line_spacing,
-    0.0f);
-  if(probe_func > -0.5f)
-  {
-    float cascade_radiance = mix(falloff_range.x, falloff_range.y, probe_func);
-    color = vec4(vec3(cascade_radiance), 0.0f);
-  }
-}}
-
-
-[include: "config", "polygon_layout"]
-void LoadDualCascade(
-  uint c0_probe_spacing,
-  uint c0_line_spacing,
-  uint c0_dirs_count,
-  uint test_cascade_idx,
-  int test_line_idx,
-  int test_probe_idx,
-  int test_dir_idx,
-  int test_probes_count,
-  out vec4 color)
-{{
-  uint dirs_count = c0_dirs_count << test_cascade_idx;
-  ivec2 atlas_texel_idx = ivec2(gl_FragCoord.xy);
-  PolygonIdx polygon_idx = AtlasTexelIdxToPolygonIdx(atlas_texel_idx, dirs_count);
-
-  color = vec4(0.0f);
-  if(polygon_idx.line_idx == test_line_idx && polygon_idx.probe_idx >= test_probe_idx && polygon_idx.probe_idx < test_probe_idx + test_probes_count && polygon_idx.dir_idx == test_dir_idx && polygon_idx.is_frustum)
-  {
-    color = vec4(1.0f, 1.0f, 1.0f, 1.0f);
-  }
-}}
-
-[include: "config", "pcg", "utils", "polygon_layout"]
+[include: "config", "pcg", "utils", "block_probes"]
 void ProbeLayoutTestShader(
   uint c0_probe_spacing,
-  uint c0_line_spacing,
-  uint test_cascade_idx,
-  int test_line_idx,
-  int test_probe_idx,
-  int test_dir_idx,
-  int test_is_frustum,
+  uint c0_dirs_count,
+  ivec2 test_probe_idx,
+  float length_scale,
+  float shrinkage,
+  int connect_lines,
   out vec4 color)
 {{
   ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
   ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
   color = vec4(0.005f) * GetCheckerboard(tile_idx);
 
-  uint probe_spacing = c0_probe_spacing;
-  uint line_spacing = c0_line_spacing << test_cascade_idx;
-
-
-  float probe_func = GetProbeFunction(
-    gl_FragCoord.xy,
-    test_line_idx,
-    float(test_probe_idx),
-    float(test_dir_idx),
-    test_is_frustum == 1,
-    probe_spacing,
-    line_spacing,
-    1.0f);
-  
-  vec2 falloff_range = GetCascadeFalloffRange(test_cascade_idx);
-  if(probe_func >= -0.5f)
+  for(uint cascade_idx = 0u; cascade_idx < 5u; cascade_idx++)
   {
-    color += vec4(0.0f, 1.0f, 0.0f, 0.0f) * 0.1f * mix(falloff_range.x, falloff_range.y, probe_func);
+    uint probe_spacing = c0_probe_spacing << cascade_idx;
+    uint dirs_count = c0_dirs_count << cascade_idx;
+    ivec2 cascade_probe_idx = test_probe_idx >> cascade_idx;
+    for(uint dir_idx = 0u; dir_idx < dirs_count; dir_idx++)
+    {
+      /*uint steps_count = 10u;
+      for(uint step_idx = 0u; step_idx < steps_count; step_idx++)
+      {
+        float ratio = (float(step_idx) + 0.5f) / float(steps_count);
+        float dir_idxf = float(loop_dir_idx) - 0.5f + ratio;
+        Line probe_line = GetProbeLine(test_probe_idx, dir_idxf, float(probe_spacing), dirs_count, 1.0f);
+
+        if(PointEdgeDist(gl_FragCoord.xy, probe_line.points[0], probe_line.points[1]) < 2.0f)
+        {
+          color += vec4(hash3i3f(ivec3(loop_dir_idx, 0, 0)), 0.0f) * 0.1f;
+        }
+      }*/
+      Line min_probe_line;
+      Line max_probe_line;
+
+      if(connect_lines == 1)
+      {
+        min_probe_line = GetProbeLineConnected(cascade_probe_idx, float(dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
+        max_probe_line = GetProbeLineConnected(cascade_probe_idx, float(dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
+      }else
+      {
+        min_probe_line = GetProbeLineDisconnected(cascade_probe_idx, float(dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
+        max_probe_line = GetProbeLineDisconnected(cascade_probe_idx, float(dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
+      }
+
+      if(PointIsInConvexMargin(gl_FragCoord.xy, min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0], shrinkage))
+      {
+        color += vec4(hash3i3f(ivec3(dir_idx, 0, 0)), 0.0f) * 0.4f;
+      }
+    }
   }
 }}
 
@@ -680,67 +144,118 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
   }
 }}
 
-[declaration: "polygon_layout"]
+
+[include: "aabb"]
+[declaration: "block_probes"]
 {{
-  vec2 GetCascadeFalloffRange(uint cascade_idx)
+  vec4 GetProbeInnerAabb(ivec2 probe_idx, float probe_spacing, float length_scale)
   {
-    return vec2(1.0f) / vec2(float(1u << cascade_idx), float(1u << (cascade_idx + 1u)));
-  }
-  float GetPolygonFunction(vec2 pos, float left_x, vec2 left_y_range, float right_x, vec2 right_y_range)
-  {
-    if(pos.x >= left_x && pos.x < right_x)
-    {
-      float x_ratio = (pos.x - left_x) / (right_x - left_x);
-      vec2 y_range = mix(left_y_range, right_y_range, x_ratio);
-      if(pos.y >= y_range.x && pos.y < y_range.y)
-      {
-        return x_ratio;
-      }
-    }
-    return -1.0f;
+    return vec4(vec2(probe_idx) - vec2(1.0f) * length_scale, vec2(probe_idx) + vec2(1.0f + length_scale)) * probe_spacing;
   }
 
-  float GetProbeFunction(
-    vec2 pos,
-    int line_idx,
-    float probe_idxf,
-    float dir_idxf,
-    bool is_frustum,
-    uint probe_spacing,
-    uint line_spacing,
-    float frustum_shrinkage)
+  vec4 GetProbeOuterAabb(ivec2 probe_idx, float probe_spacing, float length_scale)
   {
-    float left_line_x = float(line_idx) * float(line_spacing);
-    vec2 left_line_y_range = (vec2(probe_idxf) + vec2(0.0f, 1.0f)) * float(probe_spacing) + vec2(frustum_shrinkage, -frustum_shrinkage);
-    bool is_extended_line = (line_idx % 2) == 0;
-    float right_line_x = float(line_idx + (is_extended_line ? 2 : 1)) * float(line_spacing);
-
-    vec2 y_widening = is_frustum ? vec2(0.0f, is_extended_line ? 3.0f : 2.0f) : vec2(0.0f, 1.0f);
-    vec2 right_line_y_range = (vec2(probe_idxf) + vec2(dir_idxf) * (is_extended_line ? 2.0f : 1.0f) + y_widening) * float(probe_spacing) + vec2(frustum_shrinkage, -frustum_shrinkage);
-    return GetPolygonFunction(pos, left_line_x, left_line_y_range, right_line_x, right_line_y_range);
+    ivec2 parent_probe_idx = probe_idx / 2;
+    float parent_probe_spacing = probe_spacing * 2.0f;
+    return GetProbeInnerAabb(parent_probe_idx, parent_probe_spacing, length_scale);
   }
 
-  struct PolygonIdx
+  struct Line
   {
-    int line_idx;
-    int probe_idx;
-    int dir_idx;
-    bool is_frustum;
+    vec2 points[2];
   };
-
-  PolygonIdx AtlasTexelIdxToPolygonIdx(ivec2 texel_idx, uint dirs_count)
+  Line GetProbeLineConnected(ivec2 probe_idx, float dir_idxf, float probe_spacing, uint dirs_count, float length_scale)
   {
-    PolygonIdx polygon_idx;
-    polygon_idx.line_idx = texel_idx.x / int(dirs_count * 2u);
-    polygon_idx.probe_idx = texel_idx.y;
-    polygon_idx.dir_idx = texel_idx.x % int(dirs_count);
-    polygon_idx.is_frustum = ((texel_idx.x % int(dirs_count * 2u)) < int(dirs_count));
-    return polygon_idx;
+    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, probe_spacing, length_scale);
+    vec4 outer_aabb = GetProbeOuterAabb(probe_idx, probe_spacing, length_scale);
+
+    float dir_ratio = (dir_idxf + 0.5f) / float(dirs_count);
+
+    vec2 norm_points[2];
+    norm_points[0] = GetNormAabbPerimeterPoint(dir_ratio);
+    norm_points[1] = GetNormAabbPerimeterPoint(dir_ratio);
+
+    Line probe_line;
+    probe_line.points[0] = mix(inner_aabb.xy, inner_aabb.zw, norm_points[0]);
+    probe_line.points[1] = mix(outer_aabb.xy, outer_aabb.zw, norm_points[1]);
+    return probe_line;
+  }
+  Line GetProbeLineDisconnected(ivec2 probe_idx, float dir_idxf, float probe_spacing, uint dirs_count, float length_scale)
+  {
+    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, probe_spacing, length_scale);
+    vec4 outer_aabb = GetProbeOuterAabb(probe_idx, probe_spacing, length_scale);
+
+    float dir_ratio = (dir_idxf + 0.5f) / float(dirs_count);
+
+    vec2 norm_point;
+    norm_point = GetNormAabbPerimeterPoint(dir_ratio);
+    vec2 ray_dir = normalize(norm_point - vec2(0.5f));
+
+    Line probe_line;
+    probe_line.points[0] = mix(inner_aabb.xy, inner_aabb.zw, norm_point);
+
+    vec2 t = RayAabbIntersect(outer_aabb.xy, outer_aabb.zw, probe_line.points[0], ray_dir);
+    probe_line.points[1] = probe_line.points[0] + ray_dir * t.y;
+    return probe_line;
   }
 
-  ivec2 PolygonIdxToAtlasTexelIdx(int line_idx, int probe_idx, int dir_idx, bool is_frustum, uint dirs_count)
+
+  float GetProbeDirIdxf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, float probe_spacing, uint dirs_count, float debug_scale)
   {
-    return ivec2(line_idx * int(dirs_count * 2u) + (is_frustum ? 0 : int(dirs_count)) + dir_idx, probe_idx);
+    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, probe_spacing, debug_scale);
+    vec2 t = RayAabbIntersect(inner_aabb.xy, inner_aabb.zw, ray_origin, ray_dir);
+    vec2 p = ray_origin + ray_dir * t.y;
+
+    vec2 norm_point = (p - inner_aabb.xy) / (inner_aabb.zw - inner_aabb.xy);
+    float dir_ratio = GetNormAabbPerimeterRatio(norm_point);
+    return dir_ratio * float(dirs_count) - 0.5f;
+  }
+}}
+
+[declaration: "aabb"]
+{{
+  vec2 SafeInv(vec2 v)
+  {
+    float large_val = 1e7f;
+    return vec2(
+      abs(v.x) > 0.0f ? 1.0f / v.x : large_val,
+      abs(v.y) > 0.0f ? 1.0f / v.y : large_val
+    );
+  }
+  vec2 RayAabbIntersect(vec2 aabb_min, vec2 aabb_max, vec2 ray_origin, vec2 ray_dir)
+  {
+    vec2 inv_dir = SafeInv(ray_dir);
+    vec2 t1 = (aabb_min - ray_origin) * inv_dir;
+    vec2 t2 = (aabb_max - ray_origin) * inv_dir;
+
+    vec2 t;
+    t.x = max(min(t1.x, t2.x), min(t1.y, t2.y));
+    t.y = min(max(t1.x, t2.x), max(t1.y, t2.y));
+    return t;
+  }
+
+  vec2 GetNormAabbPerimeterPoint(float ratio)
+  {
+    float perimeter_coord = ratio * 4.0f;
+    int side_idx = int(floor(perimeter_coord)) % 4;
+    float side_ratio = fract(perimeter_coord);
+
+    if(side_idx == 0) return vec2(side_ratio, 0.0f);
+    if(side_idx == 1) return vec2(1.0f, side_ratio);
+    if(side_idx == 2) return vec2(1.0f - side_ratio, 1.0f);
+    return vec2(0.0f, 1.0f - side_ratio);
+  }
+
+  float GetNormAabbPerimeterRatio(vec2 point)
+  {
+    float eps = 1e-2f;
+    if(point.y < eps)
+      return (point.x + 0.0f) / 4.0f;
+    if(point.x > 1.0f - eps)
+      return (point.y + 1.0f) / 4.0f;
+    if(point.y > 1.0f - eps)
+      return ((1.0f - point.x) + 2.0f) / 4.0f;
+    return ((1.0f - point.y) + 3.0f) / 4.0f;
   }
 }}
 [declaration: "utils"]
@@ -748,6 +263,41 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
   float GetCheckerboard(ivec2 p)
   {
     return ((p.x + p.y) % 2 == 0) ? 0.0f : 1.0f;
+  }
+  float PointEdgeDist(vec2 p, vec2 p0, vec2 p1)
+  {
+      vec2 delta = p1 - p0;
+      float scale = dot(p - p0, delta) / dot(delta, delta);
+      vec2 proj = p0 + delta * scale;
+      return scale > 0.0f && scale < 1.0f ? length(proj - p) : min(length(p - p0), length(p - p1));
+      //return length(proj - p);
+  }
+  float cross2(vec2 v0, vec2 v1)
+  {
+    return v0.x * v1.y - v0.y * v1.x;
+  }
+  bool PointIsInConvex(vec2 p, vec2 p0, vec2 p1, vec2 p2, vec2 p3)
+  {
+    bool s0 = cross2(p1 - p0, p - p0) > 0.0f;
+    bool s1 = cross2(p2 - p1, p - p1) > 0.0f;
+    bool s2 = cross2(p3 - p2, p - p2) > 0.0f;
+    bool s3 = cross2(p0 - p3, p - p3) > 0.0f;
+    return s0 && s1 && s2 && s3;
+  }
+  float PointLineDist(vec2 p, vec2 p0, vec2 p1)
+  {
+    vec2 delta = p1 - p0;
+    vec2 perp = vec2(-delta.y, delta.x);
+    return dot(p - p0, normalize(perp));
+  }
+  bool PointIsInConvexMargin(vec2 p, vec2 p0, vec2 p1, vec2 p2, vec2 p3, float margin)
+  {
+    
+    bool s0 = PointLineDist(p, p0, p1) > margin;
+    bool s1 = PointLineDist(p, p1, p2) > margin;
+    bool s2 = PointLineDist(p, p2, p3) > margin;
+    bool s3 = PointLineDist(p, p3, p0) > margin;
+    return s0 && s1 && s2 && s3;
   }
 }}
 [declaration: "merging"]
