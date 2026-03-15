@@ -20,8 +20,7 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 10;
-  uint c0_line_spacing = 10;
+  uint c0_probe_spacing = 30;
   uint c0_dirs_count = SliderInt("c0_dirs_count/4", 1, 4, 1) * 4;
   float length_scale = SliderFloat("length_scale", 0.0f, 5.0f, 1.0f);
 
@@ -39,6 +38,9 @@ void RenderGraphMain()
     curr_dirs_count *= 2;
     //Text("c" + to_string(cascade_idx) + " size" +  to_string(curr_size));
   }
+  int source_x = SliderInt("source_x", 0, viewport_size.x, viewport_size.x / 2);
+  int source_y = SliderInt("source_y", 0, viewport_size.y, viewport_size.y / 2);
+
   for(uint cascade_idx = 0; cascade_idx < cascades_count; cascade_idx++)
   {
     LoadCascade(
@@ -47,12 +49,21 @@ void RenderGraphMain()
       c0_dirs_count,
       cascade_idx,
       length_scale,
+      vec2(source_x, source_y),
       extended_cascades[cascade_idx]);
   }
 
-  LoadCheckerboard(GetSwapchainImage(), c0_probe_spacing);
+  LoadCheckerboard(GetSwapchainImage(), vec2(source_x, source_y), c0_probe_spacing);
 
-  /*float length_scale = SliderFloat("length_scale", 0.0f, 5.0f, 1.0f);
+  /*int test_cascade_idx = SliderInt("test_cascade_idx", 0, 5, 0);
+  GatherCascade(
+    viewport_size,
+    c0_probe_spacing,
+    c0_dirs_count,
+    test_cascade_idx,
+    length_scale,
+    extended_cascades[test_cascade_idx],
+    GetSwapchainImage());*/
   int test_probe_idx_x = SliderInt("probe_idx_x", 0, 100, 0);
   int test_probe_idx_y = SliderInt("probe_idx_y", 0, 100, 0);
   float shrinkage = SliderFloat("shrinkage", 0.0f, 5.0f, 1.0f);
@@ -65,10 +76,60 @@ void RenderGraphMain()
     length_scale,
     shrinkage,
     connect_lines,
-    GetSwapchainImage());*/
+    GetSwapchainImage());
 
   Text("Fps: " + GetSmoothFps());
 }}
+
+[include: "config", "pcg", "utils", "block_probes"]
+[blendmode: additive]
+void GatherCascade(
+  uvec2 viewport_size,
+  uint c0_probe_spacing,
+  uint c0_dirs_count,
+  uint cascade_idx,
+  float length_scale,
+  sampler2D cascade_atlas,
+  out vec4 color)
+{{
+  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
+  ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
+
+  uvec2 c0_probes_count = viewport_size / c0_probe_spacing;
+  uvec2 probes_count = c0_probes_count >> cascade_idx;
+  uint probe_spacing = c0_probe_spacing << cascade_idx;
+  uint dirs_count = c0_dirs_count << cascade_idx;
+
+  ivec2 probe_idx = pixel_idx / int(probe_spacing);
+
+  color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+
+  uint steps_count = 200u;
+  for(uint step_idx = 0u; step_idx < steps_count; step_idx++)
+  {
+    float ratio = (float(step_idx) + 0.5f) / float(steps_count);
+    float ang = ratio * 2.0f * 3.1415f;
+    vec2 ray_dir = vec2(cos(ang), sin(ang));
+    float dir_idxf = GetProbeDirIdxf(probe_idx, gl_FragCoord.xy, ray_dir, float(probe_spacing), dirs_count, length_scale);
+    int dir_idx = int(round(dir_idxf));
+    
+    ivec2 texel_idx = IntervalIdxToAtlasTexelIdx(probe_idx, dir_idx, dirs_count);
+    color += texelFetch(cascade_atlas, texel_idx, 0) / float(steps_count);
+  }
+
+  {
+    ivec2 test_probe_idx = ivec2(5, 0);
+    int test_dir_idx = 2;
+    Line min_probe_line = GetProbeLineDisconnected(test_probe_idx, float(test_dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
+    Line max_probe_line = GetProbeLineDisconnected(test_probe_idx, float(test_dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
+    if(PointIsInConvex(gl_FragCoord.xy, min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0]))
+    {
+      color += vec4(1.0f, 0.5f, 0.0f, 1.0f) * 1e-1f;
+    }
+  }
+
+}}
+
 [include: "config", "pcg", "utils", "block_probes"]
 void LoadCascade(
   uvec2 viewport_size,
@@ -76,6 +137,7 @@ void LoadCascade(
   uint c0_dirs_count,
   uint cascade_idx,
   float length_scale,
+  vec2 source_pos,
   out vec4 color)
 {{
   uvec2 c0_probes_count = viewport_size / c0_probe_spacing;
@@ -89,8 +151,29 @@ void LoadCascade(
   if(interval_idx.probe_idx.x < int(probes_count.x) && interval_idx.probe_idx.y < int(probes_count.y) && interval_idx.dir_idx < int(dirs_count))
   {
     Line center_line = GetProbeLineConnected(interval_idx.probe_idx, float(interval_idx.dir_idx), float(probe_spacing), dirs_count, length_scale);
+    ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
+    ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
 
+    Line min_probe_line = GetProbeLineDisconnected(interval_idx.probe_idx, float(interval_idx.dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
+    Line max_probe_line = GetProbeLineDisconnected(interval_idx.probe_idx, float(interval_idx.dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
+
+    //if(interval_idx.probe_idx.x == 3 && interval_idx.probe_idx.y == 2 && interval_idx.dir_idx == 28)
+    //if(PointIsInConvexMargin(source_pos + vec2(0.5f), min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0], 0.0f))
+    if(PointIsInConvex(source_pos + vec2(0.5f), min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0]))
+    {
+      color = vec4(0.0f, 1.0f, 0.0f, 0.0f);
+    }
   }
+
+  {
+    ivec2 test_probe_idx = ivec2(5, 0);
+    int test_dir_idx = 2;
+    if(interval_idx.probe_idx.x == 5 && interval_idx.probe_idx.y == 0 && interval_idx.dir_idx == 2)
+    {
+      color += vec4(1.0f, 0.5f, 0.0f, 0.0f) * 1e-1f;
+    }
+  }
+
 }}
 
 [include: "config", "pcg", "utils", "block_probes"]
@@ -114,32 +197,7 @@ void ProbeLayoutTestShader(
     ivec2 cascade_probe_idx = test_probe_idx >> cascade_idx;
     for(uint dir_idx = 0u; dir_idx < dirs_count; dir_idx++)
     {
-      /*uint steps_count = 10u;
-      for(uint step_idx = 0u; step_idx < steps_count; step_idx++)
-      {
-        float ratio = (float(step_idx) + 0.5f) / float(steps_count);
-        float dir_idxf = float(loop_dir_idx) - 0.5f + ratio;
-        Line probe_line = GetProbeLine(test_probe_idx, dir_idxf, float(probe_spacing), dirs_count, 1.0f);
-
-        if(PointEdgeDist(gl_FragCoord.xy, probe_line.points[0], probe_line.points[1]) < 2.0f)
-        {
-          color += vec4(hash3i3f(ivec3(loop_dir_idx, 0, 0)), 0.0f) * 0.1f;
-        }
-      }*/
-      Line min_probe_line;
-      Line max_probe_line;
-
-      if(connect_lines == 1)
-      {
-        min_probe_line = GetProbeLineConnected(cascade_probe_idx, float(dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
-        max_probe_line = GetProbeLineConnected(cascade_probe_idx, float(dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
-      }else
-      {
-        min_probe_line = GetProbeLineDisconnected(cascade_probe_idx, float(dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
-        max_probe_line = GetProbeLineDisconnected(cascade_probe_idx, float(dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
-      }
-
-      if(PointIsInConvexMargin(gl_FragCoord.xy, min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0], shrinkage))
+      if(IsPointInPolygon(gl_FragCoord.xy, cascade_probe_idx, float(dir_idx), float(probe_spacing), dirs_count, length_scale, connect_lines == 1, shrinkage))
       {
         color += vec4(hash3i3f(ivec3(dir_idx, 0, 0)), 0.0f) * 0.4f;
       }
@@ -148,11 +206,15 @@ void ProbeLayoutTestShader(
 }}
 
 [include: "utils"]
-void LoadCheckerboard(out vec4 col, uint spacing)
+void LoadCheckerboard(out vec4 col, vec2 source_pos, uint spacing)
 {{
   ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
   
   col = vec4(vec3(0.001f), 1.0f) * GetCheckerboard(pixel_idx / int(spacing));
+  if(length(gl_FragCoord.xy - source_pos) < 5.0f)
+  {
+    col += vec4(1.0f);
+  }
 }}
 
 void ClearShader(out vec4 col)
@@ -231,6 +293,29 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
     return probe_line;
   }
 
+  bool IsPointInPolygon(vec2 point, ivec2 probe_idx, float dir_idx, float probe_spacing, uint dirs_count, float length_scale, bool connect_lines, float margin)
+  {
+    Line min_probe_line;
+    Line max_probe_line;
+    if(connect_lines)
+    {
+      min_probe_line = GetProbeLineConnected(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
+      max_probe_line = GetProbeLineConnected(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
+    }else
+    {
+      min_probe_line = GetProbeLineDisconnected(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
+      max_probe_line = GetProbeLineDisconnected(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
+    }
+
+    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, float(probe_spacing), length_scale);
+    vec4 outer_aabb = GetProbeOuterAabb(probe_idx, float(probe_spacing), length_scale);
+    return
+      PointLineDist(point, min_probe_line.points[0], min_probe_line.points[1]) > margin &&
+      PointLineDist(point, max_probe_line.points[0], max_probe_line.points[1]) < -margin &&
+      !IsPointInAabb(point, vec4(inner_aabb.xy - vec2(margin), inner_aabb.zw + vec2(margin))) &&
+       IsPointInAabb(point, vec4(outer_aabb.xy + vec2(margin), outer_aabb.zw - vec2(margin)));
+  }
+
 
   float GetProbeDirIdxf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, float probe_spacing, uint dirs_count, float debug_scale)
   {
@@ -285,6 +370,14 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
     return t;
   }
 
+  bool IsPointInAabb(vec2 point, vec4 aabb_minmax)
+  {
+    return
+      point.x >= aabb_minmax.x &&
+      point.x <= aabb_minmax.z &&
+      point.y >= aabb_minmax.y &&
+      point.y <= aabb_minmax.w;
+  }
   vec2 GetNormAabbPerimeterPoint(float ratio)
   {
     float perimeter_coord = ratio * 4.0f;
@@ -329,10 +422,10 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
   }
   bool PointIsInConvex(vec2 p, vec2 p0, vec2 p1, vec2 p2, vec2 p3)
   {
-    bool s0 = cross2(p1 - p0, p - p0) > 0.0f;
-    bool s1 = cross2(p2 - p1, p - p1) > 0.0f;
-    bool s2 = cross2(p3 - p2, p - p2) > 0.0f;
-    bool s3 = cross2(p0 - p3, p - p3) > 0.0f;
+    bool s0 = cross2(p1 - p0, p - p0) >= 0.0f;
+    bool s1 = cross2(p2 - p1, p - p1) >= 0.0f;
+    bool s2 = cross2(p3 - p2, p - p2) >= 0.0f;
+    bool s3 = cross2(p0 - p3, p - p3) >= 0.0f;
     return s0 && s1 && s2 && s3;
   }
   float PointLineDist(vec2 p, vec2 p0, vec2 p1)
