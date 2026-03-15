@@ -47,7 +47,7 @@ void RenderGraphMain()
   int test_probe_idx_x = SliderInt("probe_idx_x", 0, 100, 0);
   int test_probe_idx_y = SliderInt("probe_idx_y", 0, 100, 0);
   float shrinkage = SliderFloat("shrinkage", 0.0f, 5.0f, 1.0f);
-  int connect_lines = SliderInt("connect_lines", 0, 1, 1);
+  int connect_lines = SliderInt("connect_lines", 0, 1, 0);
 
   ProbeLayoutTestShader(
     c0_probe_spacing,
@@ -82,32 +82,7 @@ void ProbeLayoutTestShader(
     ivec2 cascade_probe_idx = test_probe_idx >> cascade_idx;
     for(uint dir_idx = 0u; dir_idx < dirs_count; dir_idx++)
     {
-      /*uint steps_count = 10u;
-      for(uint step_idx = 0u; step_idx < steps_count; step_idx++)
-      {
-        float ratio = (float(step_idx) + 0.5f) / float(steps_count);
-        float dir_idxf = float(loop_dir_idx) - 0.5f + ratio;
-        Line probe_line = GetProbeLine(test_probe_idx, dir_idxf, float(probe_spacing), dirs_count, 1.0f);
-
-        if(PointEdgeDist(gl_FragCoord.xy, probe_line.points[0], probe_line.points[1]) < 2.0f)
-        {
-          color += vec4(hash3i3f(ivec3(loop_dir_idx, 0, 0)), 0.0f) * 0.1f;
-        }
-      }*/
-      Line min_probe_line;
-      Line max_probe_line;
-
-      if(connect_lines == 1)
-      {
-        min_probe_line = GetProbeLineConnected(cascade_probe_idx, float(dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
-        max_probe_line = GetProbeLineConnected(cascade_probe_idx, float(dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
-      }else
-      {
-        min_probe_line = GetProbeLineDisconnected(cascade_probe_idx, float(dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
-        max_probe_line = GetProbeLineDisconnected(cascade_probe_idx, float(dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
-      }
-
-      if(PointIsInConvexMargin(gl_FragCoord.xy, min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0], shrinkage))
+      if(IsPointInPolygon(gl_FragCoord.xy, cascade_probe_idx, float(dir_idx), float(probe_spacing), dirs_count, length_scale, connect_lines == 1, shrinkage))
       {
         color += vec4(hash3i3f(ivec3(dir_idx, 0, 0)), 0.0f) * 0.4f;
       }
@@ -199,6 +174,29 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
     return probe_line;
   }
 
+  bool IsPointInPolygon(vec2 point, ivec2 probe_idx, float dir_idx, float probe_spacing, uint dirs_count, float length_scale, bool connect_lines, float margin)
+  {
+    Line min_probe_line;
+    Line max_probe_line;
+    if(connect_lines)
+    {
+      min_probe_line = GetProbeLineConnected(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
+      max_probe_line = GetProbeLineConnected(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
+    }else
+    {
+      min_probe_line = GetProbeLineDisconnected(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
+      max_probe_line = GetProbeLineDisconnected(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
+    }
+
+    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, float(probe_spacing), length_scale);
+    vec4 outer_aabb = GetProbeOuterAabb(probe_idx, float(probe_spacing), length_scale);
+    return
+      PointLineDist(point, min_probe_line.points[0], min_probe_line.points[1]) > margin &&
+      PointLineDist(point, max_probe_line.points[0], max_probe_line.points[1]) < -margin &&
+      !IsPointInAabb(point, vec4(inner_aabb.xy - vec2(margin), inner_aabb.zw + vec2(margin))) &&
+       IsPointInAabb(point, vec4(outer_aabb.xy + vec2(margin), outer_aabb.zw - vec2(margin)));
+  }
+
 
   float GetProbeDirIdxf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, float probe_spacing, uint dirs_count, float debug_scale)
   {
@@ -232,6 +230,15 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
     t.x = max(min(t1.x, t2.x), min(t1.y, t2.y));
     t.y = min(max(t1.x, t2.x), max(t1.y, t2.y));
     return t;
+  }
+  
+  bool IsPointInAabb(vec2 point, vec4 aabb_minmax)
+  {
+    return
+      point.x >= aabb_minmax.x &&
+      point.x <= aabb_minmax.z &&
+      point.y >= aabb_minmax.y &&
+      point.y <= aabb_minmax.w;
   }
 
   vec2 GetNormAabbPerimeterPoint(float ratio)
