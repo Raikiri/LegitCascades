@@ -20,7 +20,7 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 5;
+  uint c0_probe_spacing = 30;
   uint c0_dirs_count = SliderInt("c0_dirs_count/4", 1, 5, 1) * 4;
   float length_scale = SliderFloat("length_scale", 0.0f, 5.0f, 1.0f);
 
@@ -74,7 +74,20 @@ void RenderGraphMain()
       extended_cascades[cascade_idx],
       GetSwapchainImage());
   }*/
-  for(uint cascade_idx = 0; cascade_idx < 1; cascade_idx++)
+  for(uint src_cascade_idx = 0; src_cascade_idx < 2; src_cascade_idx++)
+  {
+    ExtendDualCascade(
+      viewport_size,
+      c0_probe_spacing,
+      c0_dirs_count,
+      src_cascade_idx,
+      length_scale,
+      vec2(source_x, source_y),
+      extended_cascades[src_cascade_idx],
+      extended_cascades[src_cascade_idx + 1]);
+
+  }
+  for(uint cascade_idx = 0; cascade_idx < 3; cascade_idx++)
   {
     GatherDualCascade(
       viewport_size,
@@ -252,8 +265,9 @@ void GatherDualCascade(
   color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 
   uint line_type = 2u;
+  float shrinkening = 1.0f;
 
-  int search_radius = 5;
+  int search_radius = 3;
   ivec2 src_probe_idx;
   for(src_probe_idx.y = tile_idx.y - search_radius; src_probe_idx.y <= tile_idx.y + search_radius; src_probe_idx.y++)
   {
@@ -261,7 +275,7 @@ void GatherDualCascade(
     {
       for(uint dir_idx = 0u; dir_idx < dirs_count; dir_idx++)
       {
-        if(IsPointInPolygon(gl_FragCoord.xy, src_probe_idx, float(dir_idx), float(probe_spacing), dirs_count, length_scale, 2u, 0.01f))
+        if(IsPointInPolygon(gl_FragCoord.xy, src_probe_idx, float(dir_idx), float(probe_spacing), dirs_count, length_scale, line_type, shrinkening))
         {
           ivec2 texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, int(dir_idx), dirs_count);
           color += texelFetch(cascade_atlas, texel_idx, 0);
@@ -269,24 +283,6 @@ void GatherDualCascade(
       }
     }
   }
-
-
-
-  /*if(cascade_idx == 1u)
-  {
-    for(int test_dir_idx = 0; test_dir_idx < int(dirs_count); test_dir_idx++)
-    {
-      ivec2 test_probe_idx = ivec2(3, 1);
-      if(IsPointInPolygon(gl_FragCoord.xy, test_probe_idx, float(test_dir_idx), float(probe_spacing), dirs_count, length_scale, 2u, 0.0f))
-      {
-        ivec2 texel_idx = IntervalIdxToAtlasTexelIdx(test_probe_idx, int(test_dir_idx), dirs_count);
-        vec4 texel_color = texelFetch(cascade_atlas, texel_idx, 0);
-        //color.rgb += hash3i3f(ivec3(test_dir_idx, 0, 0)) * 1e-1f;
-        color.rgb += texel_color.rgb * 1e-1f;
-      }
-    }
-  }*/
-
 }}
 
 [include: "config", "pcg", "utils", "block_probes"]
@@ -313,12 +309,6 @@ void LoadPrimalCascade(
     ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
     ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
 
-    Line min_probe_line = GetProbeLineDisconnectedOuter(interval_idx.probe_idx, float(interval_idx.dir_idx) - 0.5f, float(probe_spacing), dirs_count, length_scale);
-    Line max_probe_line = GetProbeLineDisconnectedOuter(interval_idx.probe_idx, float(interval_idx.dir_idx) + 0.5f, float(probe_spacing), dirs_count, length_scale);
-
-    //if(interval_idx.probe_idx.x == 3 && interval_idx.probe_idx.y == 2 && interval_idx.dir_idx == 28)
-    //if(PointIsInConvexMargin(source_pos + vec2(0.5f), min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0], 0.0f))
-    //if(PointIsInConvex(source_pos + vec2(0.5f), min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0]))
     if(IsPointInPolygon(source_pos + vec2(0.5f), interval_idx.probe_idx, float(interval_idx.dir_idx), float(probe_spacing), dirs_count, length_scale, line_type, 0.0f))
     {
       vec2 field = EncodeProbeField(source_pos + vec2(0.5f), interval_idx.probe_idx, float(interval_idx.dir_idx), float(probe_spacing), dirs_count, length_scale, line_type);
@@ -360,7 +350,66 @@ void LoadDualCascade(
   color = vec4(0.0f);
   if(interval_idx.probe_idx.x == light_tile_idx.x && interval_idx.probe_idx.y == light_tile_idx.y && interval_idx.dir_idx < int(dirs_count))
   {
-    color = vec4(0.0f, 1.0f, 0.0f, 1.0f) * 0.1f;
+    color = vec4(hash3i3f(ivec3(interval_idx.dir_idx, 0, 0)), 1.0f) * 0.1f;
+  }
+
+  /*{
+    int test_dir_idx = 1;
+    if(interval_idx.probe_idx.x == 0 && interval_idx.probe_idx.y == 5 && interval_idx.dir_idx == 2)
+    {
+      color += vec4(1.0f, 0.5f, 0.0f, 0.0f) * 1e-1f;
+    }
+  }*/
+
+}}
+
+
+[include: "config", "pcg", "utils", "block_probes"]
+void ExtendDualCascade(
+  uvec2 viewport_size,
+  uint c0_probe_spacing,
+  uint c0_dirs_count,
+  uint src_cascade_idx,
+  float length_scale,
+  vec2 source_pos,
+  sampler2D src_cascade_tex,
+  out vec4 color)
+{{
+  uint line_type = 2u;
+  uvec2 c0_probes_count = viewport_size / c0_probe_spacing;
+
+  uvec2 src_probes_count = c0_probes_count >> src_cascade_idx;
+  uint src_probe_spacing = c0_probe_spacing << src_cascade_idx;
+  uint src_dirs_count = c0_dirs_count << src_cascade_idx;
+
+  uint dst_cascade_idx = src_cascade_idx + 1u;
+  uvec2 dst_probes_count = c0_probes_count >> dst_cascade_idx;
+  uint dst_probe_spacing = c0_probe_spacing << dst_cascade_idx;
+  uint dst_dirs_count = c0_dirs_count << dst_cascade_idx;
+
+  ivec2 dst_texel_idx = ivec2(gl_FragCoord.xy);
+  IntervalIdx dst_interval_idx = AtlasTexelIdxToIntervalIdx(dst_texel_idx, dst_dirs_count);
+  color = vec4(0.0f);
+
+  uint steps_count = 10u;
+  for(uint step_idx = 0u; step_idx < steps_count; step_idx++)
+  {
+    float ratio = (float(step_idx) + 0.5f) / float(steps_count);
+    Line dst_line = GetProbeLine(dst_interval_idx.probe_idx, float(dst_interval_idx.dir_idx) - 0.5f + ratio, float(dst_probe_spacing), dst_dirs_count, length_scale, line_type);
+
+    ivec2 probe_idx_offset;
+    for(probe_idx_offset.y = 0; probe_idx_offset.y < 2; probe_idx_offset.y++)
+    {
+      for(probe_idx_offset.x = 0; probe_idx_offset.x < 2; probe_idx_offset.x++)
+      {
+        ivec2 src_probe_idx = dst_interval_idx.probe_idx * 2 + probe_idx_offset;
+        vec2 dir = normalize(dst_line.points[1] - dst_line.points[0]);
+        float src_dir_idxf = GetProbeDirIdxf(src_probe_idx, dst_line.points[0], dir, float(src_probe_spacing), src_dirs_count, length_scale);
+        int src_dir_idx = int(round(src_dir_idxf));
+        ivec2 src_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, int(src_dir_idx), src_dirs_count);
+        color += texelFetch(src_cascade_tex, src_texel_idx, 0) / float(steps_count);
+      }
+    }
   }
 
   /*{
