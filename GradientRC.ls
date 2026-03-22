@@ -20,7 +20,7 @@ void RenderGraphMain()
   array<Image> extended_cascades;
   array<Image> merged_cascades;
 
-  uint c0_probe_spacing = 60;
+  uint c0_probe_spacing = 5;
   uint c0_dirs_count = SliderInt("c0_dirs_count/4", 1, 5, 1) * 4;
   float length_scale = SliderFloat("length_scale", 0.0f, 5.0f, 1.0f);
 
@@ -55,31 +55,17 @@ void RenderGraphMain()
 
   LoadCheckerboard(GetSwapchainImage(), vec2(source_x, source_y), c0_probe_spacing);
 
-  int test_cascade_idx = SliderInt("test_cascade_idx", 0, 5, 0);
-  GatherCascade(
-    viewport_size,
-    c0_probe_spacing,
-    c0_dirs_count,
-    test_cascade_idx,
-    length_scale,
-    extended_cascades[test_cascade_idx],
-    GetSwapchainImage());
-  GatherCascade(
-    viewport_size,
-    c0_probe_spacing,
-    c0_dirs_count,
-    test_cascade_idx + 1,
-    length_scale,
-    extended_cascades[test_cascade_idx + 1],
-    GetSwapchainImage());
-  GatherCascade(
-    viewport_size,
-    c0_probe_spacing,
-    c0_dirs_count,
-    test_cascade_idx + 2,
-    length_scale,
-    extended_cascades[test_cascade_idx + 2],
-    GetSwapchainImage());
+  for(uint cascade_idx = 0; cascade_idx < 6; cascade_idx++)
+  {
+    GatherCascade(
+      viewport_size,
+      c0_probe_spacing,
+      c0_dirs_count,
+      cascade_idx,
+      length_scale,
+      extended_cascades[cascade_idx],
+      GetSwapchainImage());
+  }
   
 
   int render_test = SliderInt("render_test", 0, 1, 0);
@@ -126,6 +112,7 @@ void GatherCascade(
 
   color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 
+  uint line_type = 2u;
   /*uint steps_count = 100u;
   for(uint step_idx = 0u; step_idx < steps_count; step_idx++)
   {
@@ -165,7 +152,7 @@ void GatherCascade(
     ivec2 texel_idx = IntervalIdxToAtlasTexelIdx(probe_idx, dir_idx, dirs_count);
     color += texelFetch(cascade_atlas, texel_idx, 0) * light_ang_size;
   }*/
-  for(uint dir_idx = 0u; dir_idx < dirs_count; dir_idx++)
+  /*for(uint dir_idx = 0u; dir_idx < dirs_count; dir_idx++)
   {
     float ratio = (float(dir_idx) + 0.5f) / float(dirs_count);
     vec2 norm_light_pos = GetNormAabbPerimeterPoint(ratio);
@@ -180,7 +167,30 @@ void GatherCascade(
     vec3 probe_color = hash3i3f(ivec3(probe_idx, dir_idx));
     color += texelFetch(cascade_atlas, texel_idx, 0).y * fract(length(light_pos - gl_FragCoord.xy) * 0.05f) * vec4(probe_color, 1.0f);
     //color += texelFetch(cascade_atlas, texel_idx, 0).y * 100.0f / length(light_pos - gl_FragCoord.xy);// * vec4(probe_color, 1.0f);
+  }*/
+  for(uint dir_idx = 0u; dir_idx < dirs_count; dir_idx++)
+  {
+    float ratio = (float(dir_idx) + 0.5f) / float(dirs_count);
+    vec2 norm_light_pos = GetNormAabbPerimeterPoint(ratio);
+
+    vec4 aabb = GetProbeOuterAabb(probe_idx, float(probe_spacing), length_scale);
+    vec2 light_pos = mix(aabb.xy, aabb.zw, norm_light_pos);
+
+    float light_falloff = 1.0f / length(light_pos - gl_FragCoord.xy);
+    float light_length = float(1u << cascade_idx);
+    
+    ivec2 texel_idx = IntervalIdxToAtlasTexelIdx(probe_idx, int(dir_idx), dirs_count);
+    vec3 probe_color = hash3i3f(ivec3(probe_idx, dir_idx));
+
+    vec2 probe_field = texelFetch(cascade_atlas, texel_idx, 0).xy;
+    float field_val = DecodeProbeField(gl_FragCoord.xy, probe_field, probe_idx, float(dir_idx), float(probe_spacing), dirs_count, length_scale, line_type);
+
+    //color += vec4(fract(field_val * 2000.0f));
+    color += vec4(field_val * 20.0f);
+    //color += texelFetch(cascade_atlas, texel_idx, 0).y * 100.0f / length(light_pos - gl_FragCoord.xy);// * vec4(probe_color, 1.0f);
   }
+
+
 
   /*if(cascade_idx == 1u)
   {
@@ -220,7 +230,6 @@ void LoadCascade(
   color = vec4(0.0f);
   if(interval_idx.probe_idx.x < int(probes_count.x) && interval_idx.probe_idx.y < int(probes_count.y) && interval_idx.dir_idx < int(dirs_count))
   {
-    Line center_line = GetProbeLineConnected(interval_idx.probe_idx, float(interval_idx.dir_idx), float(probe_spacing), dirs_count, length_scale);
     ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
     ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
 
@@ -232,7 +241,8 @@ void LoadCascade(
     //if(PointIsInConvex(source_pos + vec2(0.5f), min_probe_line.points[0], min_probe_line.points[1], max_probe_line.points[1], max_probe_line.points[0]))
     if(IsPointInPolygon(source_pos + vec2(0.5f), interval_idx.probe_idx, float(interval_idx.dir_idx), float(probe_spacing), dirs_count, length_scale, line_type, 0.0f))
     {
-      color = vec4(0.0f, 1.0f, 0.0f, 0.0f);
+      vec2 field = EncodeProbeField(source_pos + vec2(0.5f), interval_idx.probe_idx, float(interval_idx.dir_idx), float(probe_spacing), dirs_count, length_scale, line_type);
+      color = vec4(field, 0.0f, 1.0f);
     }
   }
 
@@ -381,25 +391,23 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
     return probe_line;
   }
 
-  bool IsPointInPolygon(vec2 point, ivec2 probe_idx, float dir_idx, float probe_spacing, uint dirs_count, float length_scale, uint line_type, float margin)
+  Line GetProbeLine(ivec2 probe_idx, float dir_idx, float probe_spacing, uint dirs_count, float length_scale, uint line_type)
   {
-    Line min_probe_line;
-    Line max_probe_line;
     if(line_type == 0u)
     {
-      min_probe_line = GetProbeLineConnected(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
-      max_probe_line = GetProbeLineConnected(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
+      return GetProbeLineConnected(probe_idx, dir_idx, probe_spacing, dirs_count, length_scale);
     }
     if(line_type == 1u)
     {
-      min_probe_line = GetProbeLineDisconnectedInner(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
-      max_probe_line = GetProbeLineDisconnectedInner(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
+      return GetProbeLineDisconnectedInner(probe_idx, dir_idx, probe_spacing, dirs_count, length_scale);
     }
-    if(line_type == 2u)
-    {
-      min_probe_line = GetProbeLineDisconnectedOuter(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
-      max_probe_line = GetProbeLineDisconnectedOuter(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
-    }
+    return GetProbeLineDisconnectedOuter(probe_idx, dir_idx, probe_spacing, dirs_count, length_scale);
+  }
+
+  bool IsPointInPolygon(vec2 point, ivec2 probe_idx, float dir_idx, float probe_spacing, uint dirs_count, float length_scale, uint line_type, float margin)
+  {
+    Line min_probe_line = GetProbeLine(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale, line_type);
+    Line max_probe_line = GetProbeLine(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale, line_type);
 
     vec4 inner_aabb = GetProbeInnerAabb(probe_idx, float(probe_spacing), length_scale);
     vec4 outer_aabb = GetProbeOuterAabb(probe_idx, float(probe_spacing), length_scale);
@@ -439,6 +447,38 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
   ivec2 IntervalIdxToAtlasTexelIdx(ivec2 probe_idx, int dir_idx, uint dirs_count)
   {
     return ivec2(probe_idx.x * int(dirs_count) + dir_idx, probe_idx.y);
+  }
+
+  float PointSource(vec2 delta)
+  {
+    //return length(delta) * 0.00001f;
+    return 1.0f / length(delta);
+  }
+  vec2 EncodePointLightField(vec2 delta, vec2 dir)
+  {
+    vec2 field;
+    field.x = PointSource(delta);
+    float eps = 0.1f;
+    field.y = (PointSource(delta + dir * eps) - field.x) / eps;
+    return field;
+  }
+
+  vec2 EncodeProbeField(vec2 source_pos, ivec2 probe_idx, float dir_idx, float probe_spacing, uint dirs_count, float length_scale, uint line_type)
+  {
+    vec4 aabb = GetProbeInnerAabb(probe_idx, probe_spacing, length_scale);
+    vec2 midpoint = (aabb.xy + aabb.zw) * 0.5f;
+    Line mid_line = GetProbeLine(probe_idx, dir_idx, probe_spacing, dirs_count, length_scale, line_type);
+    vec2 dir = normalize(mid_line.points[1] - mid_line.points[0]);
+
+    return EncodePointLightField(midpoint - source_pos, dir);
+  }
+  float DecodeProbeField(vec2 pos, vec2 probe_field, ivec2 probe_idx, float dir_idx, float probe_spacing, uint dirs_count, float length_scale, uint line_type)
+  {
+    vec4 aabb = GetProbeInnerAabb(probe_idx, probe_spacing, length_scale);
+    vec2 midpoint = (aabb.xy + aabb.zw) * 0.5f;
+    Line mid_line = GetProbeLine(probe_idx, dir_idx, probe_spacing, dirs_count, length_scale, line_type);
+    vec2 dir = normalize(mid_line.points[1] - mid_line.points[0]);
+    return probe_field.x + dot(pos - midpoint, dir * probe_field.y);
   }
 }}
 
