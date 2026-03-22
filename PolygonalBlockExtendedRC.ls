@@ -40,6 +40,7 @@ void RenderGraphMain()
   }
   int source_x = SliderInt("source_x", 0, viewport_size.x, viewport_size.x / 2);
   int source_y = SliderInt("source_y", 0, viewport_size.y, viewport_size.y / 2);
+  int line_type = SliderInt("line_type", 0, 2, 0);
 
   /*for(uint cascade_idx = 0; cascade_idx < cascades_count; cascade_idx++)
   {
@@ -58,6 +59,7 @@ void RenderGraphMain()
     c0_dirs_count,
     0,
     length_scale,
+    line_type,
     vec2(source_x, source_y),
     extended_cascades[0]);
 
@@ -82,6 +84,7 @@ void RenderGraphMain()
       c0_dirs_count,
       src_cascade_idx,
       length_scale,
+      line_type,
       vec2(source_x, source_y),
       extended_cascades[src_cascade_idx],
       extended_cascades[src_cascade_idx + 1]);
@@ -95,6 +98,7 @@ void RenderGraphMain()
       c0_dirs_count,
       cascade_idx,
       length_scale,
+      line_type,
       extended_cascades[cascade_idx],
       GetSwapchainImage());
   }
@@ -106,7 +110,6 @@ void RenderGraphMain()
     int test_probe_idx_x = SliderInt("probe_idx_x", 0, 100, 0);
     int test_probe_idx_y = SliderInt("probe_idx_y", 0, 100, 0);
     float shrinkage = SliderFloat("shrinkage", 0.0f, 5.0f, 1.0f);
-    int line_type = SliderInt("line_type", 0, 2, 0);
 
     ProbeLayoutTestShader(
       c0_probe_spacing,
@@ -250,6 +253,7 @@ void GatherDualCascade(
   uint c0_dirs_count,
   uint cascade_idx,
   float length_scale,
+  uint line_type,
   sampler2D cascade_atlas,
   out vec4 color)
 {{
@@ -264,7 +268,6 @@ void GatherDualCascade(
 
   color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 
-  uint line_type = 2u;
   float shrinkening = 1.0f;
 
   int search_radius = 3;
@@ -334,10 +337,10 @@ void LoadDualCascade(
   uint c0_dirs_count,
   uint cascade_idx,
   float length_scale,
+  uint line_type,
   vec2 source_pos,
   out vec4 color)
 {{
-  uint line_type = 2u;
   uvec2 c0_probes_count = viewport_size / c0_probe_spacing;
   uvec2 probes_count = c0_probes_count >> cascade_idx;
   uint probe_spacing = c0_probe_spacing << cascade_idx;
@@ -351,6 +354,10 @@ void LoadDualCascade(
   if(interval_idx.probe_idx.x == light_tile_idx.x && interval_idx.probe_idx.y == light_tile_idx.y && interval_idx.dir_idx < int(dirs_count))
   {
     color = vec4(hash3i3f(ivec3(interval_idx.dir_idx, 0, 0)), 1.0f) * 0.1f;
+    if(interval_idx.dir_idx == 0)
+    {
+      color *= 0.0f;
+    }
   }
 
   /*{
@@ -371,11 +378,11 @@ void ExtendDualCascade(
   uint c0_dirs_count,
   uint src_cascade_idx,
   float length_scale,
+  uint line_type,
   vec2 source_pos,
   sampler2D src_cascade_tex,
   out vec4 color)
 {{
-  uint line_type = 2u;
   uvec2 c0_probes_count = viewport_size / c0_probe_spacing;
 
   uvec2 src_probes_count = c0_probes_count >> src_cascade_idx;
@@ -391,7 +398,7 @@ void ExtendDualCascade(
   IntervalIdx dst_interval_idx = AtlasTexelIdxToIntervalIdx(dst_texel_idx, dst_dirs_count);
   color = vec4(0.0f);
 
-  uint steps_count = 10u;
+  /*uint steps_count = 10u;
   for(uint step_idx = 0u; step_idx < steps_count; step_idx++)
   {
     float ratio = (float(step_idx) + 0.5f) / float(steps_count);
@@ -404,11 +411,22 @@ void ExtendDualCascade(
       {
         ivec2 src_probe_idx = dst_interval_idx.probe_idx * 2 + probe_idx_offset;
         vec2 dir = normalize(dst_line.points[1] - dst_line.points[0]);
-        float src_dir_idxf = GetProbeDirIdxf(src_probe_idx, dst_line.points[0], dir, float(src_probe_spacing), src_dirs_count, length_scale);
+        float src_dir_idxf = GetProbeDirIdxf(src_probe_idx, dst_line.points[0], dir, float(src_probe_spacing), src_dirs_count, length_scale, line_type);
         int src_dir_idx = int(round(src_dir_idxf));
         ivec2 src_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, int(src_dir_idx), src_dirs_count);
         color += texelFetch(src_cascade_tex, src_texel_idx, 0) / float(steps_count);
       }
+    }
+  }*/
+  ivec2 probe_idx_offset;
+  for(probe_idx_offset.y = 0; probe_idx_offset.y < 2; probe_idx_offset.y++)
+  {
+    for(probe_idx_offset.x = 0; probe_idx_offset.x < 2; probe_idx_offset.x++)
+    {
+      ivec2 src_probe_idx = dst_interval_idx.probe_idx * 2 + probe_idx_offset;
+      int src_dir_idx = dst_interval_idx.dir_idx / 2;
+      ivec2 src_texel_idx = IntervalIdxToAtlasTexelIdx(src_probe_idx, int(src_dir_idx), src_dirs_count);
+      color += texelFetch(src_cascade_tex, src_texel_idx, 0);
     }
   }
 
@@ -585,9 +603,14 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
   }
 
 
-  float GetProbeDirIdxf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, float probe_spacing, uint dirs_count, float debug_scale)
+  float GetProbeDirIdxf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, float probe_spacing, uint dirs_count, float length_scale, uint line_type)
   {
-    vec4 aabb = GetProbeOuterAabb(probe_idx, probe_spacing, debug_scale);
+    vec4 aabb;
+    aabb = GetProbeOuterAabb(probe_idx, probe_spacing, length_scale);
+    /*if(line_type != 1u)
+      aabb = GetProbeOuterAabb(probe_idx, probe_spacing, length_scale);
+    else
+      aabb = GetProbeInnerAabb(probe_idx, probe_spacing, length_scale);*/
     vec2 t = RayAabbIntersect(aabb.xy, aabb.zw, ray_origin, ray_dir);
     vec2 p = ray_origin + ray_dir * t.y;
 
