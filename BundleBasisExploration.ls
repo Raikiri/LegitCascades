@@ -43,7 +43,18 @@ void RenderGraphMain()
 
   LoadCheckerboard(GetSwapchainImage(), c0_probe_spacing);
 
-  BasisTestShader(GetSwapchainImage());
+  Image cascade_img = GetImage(viewport_size, rgba16f);
+
+  int source_x = SliderInt("source_x", 0, viewport_size.x, 100);
+  int source_y = SliderInt("source_y", 0, viewport_size.y, 100);
+  int source_size = SliderInt("source_size", 0, 200, 100);
+
+  vec4 source_minmax = vec4(source_x, source_y - source_size / 2, source_x, source_y + source_size / 2);
+  LoadCascade(source_minmax, cascade_img);
+  RenderEdge(source_minmax, vec4(1.0f, 0.5f, 0.0f, 0.0f), GetSwapchainImage());
+  BasisTestShader(
+    cascade_img,
+    GetSwapchainImage());
   /*float length_scale = SliderFloat("length_scale", 0.0f, 5.0f, 1.0f);
   int test_probe_idx_x = SliderInt("probe_idx_x", 0, 100, 0);
   int test_probe_idx_y = SliderInt("probe_idx_y", 0, 100, 0);
@@ -62,54 +73,91 @@ void RenderGraphMain()
   Text("Fps: " + GetSmoothFps());
 }}
 
-[include: "line_basis", "bilinear_interpolation"]
+[include : "utils"]
+void RenderEdge(
+  vec4 edge_minmax,
+  vec4 edge_color,
+  out vec4 color
+)
+{{
+  color = PointEdgeDist(gl_FragCoord.xy, edge_minmax.xy, edge_minmax.zw) < 2.0f ? edge_color : vec4(0.0f);
+}}
+[include : "hrc_basis"]
+void LoadCascade(
+  vec4 source_minmax,
+  out vec4 interval_radiance
+)
+{{
+  ivec2 func_idx = ivec2(gl_FragCoord.xy);
+  uvec2 func_count = GetBasisFuncCount();
+  interval_radiance = vec4(1.0f, 0.5f, 0.0f, 0.0f);
+  if(func_idx.x < int(func_count.x) && func_idx.y < int(func_count.y))
+  {
+    LineBasis line_basis = GetLineBasis(vec2(func_idx));
+    interval_radiance = vec4(0.0f);
+
+    uint steps_count = 50u;
+    uvec2 step_idx;
+    for(step_idx.y = 0u; step_idx.y < steps_count; step_idx.y++)
+    {
+      for(step_idx.x = 0u; step_idx.x < steps_count; step_idx.x++)
+      {
+        vec2 uv = (vec2(step_idx) + vec2(0.5f)) / float(steps_count);
+        Ray ray = UvToRayLineBasis(line_basis.origin_range, line_basis.delta_range, uv);
+
+        vec2 t = EdgeEdgeIntersectParam(source_minmax, vec4(ray.origin, ray.origin + ray.dir));
+        if(t.x >= 0.0f && t.x < 1.0f)
+        {
+          interval_radiance += vec4(1.0f, 0.5f, 0.0f, 0.0f) / float(steps_count * steps_count);
+        }
+      }
+    }
+
+  }
+}}
+
+[include: "hrc_basis", "bilinear_interpolation"]
 [blendmode: additive]
 void BasisTestShader(
-    out vec4 color
+  sampler2D cascade_img,  
+  out vec4 color
 )
 {{
   uvec2 step_idx;
 
-  vec4 line_basis_edge0 = vec4(100.0f, 100.0f, 100.0f, 150.0f);
-  vec4 line_basis_edge1 = vec4(200.0f, 100.0f, 200.0f, 150.0f);
+  vec4 origin_range = vec4(300.0f, 100.0f, 300.0f, 150.0f);
+  vec4 delta_range = vec4(1.0f, -0.1f, 1.0f, 0.1f);
 
   color = vec4(0.0f);
 
-  if(
-    PointEdgeDist(gl_FragCoord.xy, line_basis_edge0.xy, line_basis_edge0.zw) < 2.0f)
-  {
-    color += vec4(0.0f, 1.0f, 0.0f, 0.0f);
-  }
 
-  if(
-    PointEdgeDist(gl_FragCoord.xy, line_basis_edge1.xy, line_basis_edge1.zw) < 2.0f)
+  ivec2 func_idx;
+  for(func_idx.x = 0; func_idx.x < int(GetBasisFuncCount().x); func_idx.x++)
   {
-    color += vec4(1.0f, 0.0f, 0.0f, 0.0f);
-  }
-
-  mat4 colors = mat4(
-    vec4(1.0f, 0.0f, 0.0f, 0.0f),
-    vec4(0.0f, 0.0f, 0.0f, 0.0f),
-    vec4(0.0f, 1.0f, 0.0f, 0.0f),
-    vec4(0.0f, 0.0f, 0.0f, 0.0f)
-  );
-
-  const uint steps_count = 30u;
-  for(step_idx.y = 0u; step_idx.y <= steps_count; step_idx.y++)
-  {
-    for(step_idx.x = 0u; step_idx.x <= steps_count; step_idx.x++)
     {
-      vec2 uv = (vec2(step_idx)) / float(steps_count);
-      Ray ray = UvToRayLineBasis(line_basis_edge0, line_basis_edge1, uv);
-
-      vec4 ray_color = colors * GetBilinearWeights(uv);
-      vec2 rec_uv = RayToUvLineBasis(line_basis_edge0, line_basis_edge1, ray.origin, ray.dir);
-
-      if(abs(PointLineDist(gl_FragCoord.xy, ray.origin, ray.origin + ray.dir)) < 1.0f)
+      LineBasis line_basis = GetLineBasis(vec2(func_idx.x, 0.0f));
+      if(
+        PointEdgeDist(gl_FragCoord.xy, line_basis.origin_range.xy + vec2(0.0f, 4.0f), line_basis.origin_range.zw + vec2(0.0f, -4.0f)) < 1.0f)
       {
-        //color += (length(uv - rec_uv) < 0.01f ? vec4(0.0f, 1.0f, 0.0f, 0.0f) : vec4(1.0f, 0.0f, 0.0f, 0.0f)) / float(steps_count * steps_count);
-        color += ray_color / float(steps_count * steps_count) * 5.0;
+        color += vec4(0.0f, 1.0f, 0.0f, 0.0f);
       }
+    }
+
+    for(func_idx.y = -1; func_idx.y < int(GetBasisFuncCount().y); func_idx.y++)
+    {
+      mat4 colors;
+      for(uint offset_idx = 0u; offset_idx < 4u; offset_idx++)
+      {
+        vec4 node_color = vec4(0.0f);
+        ivec2 sample_idx = func_idx + ivec2(GetBilinearOffset(offset_idx));
+        if(sample_idx.x >= 0 && sample_idx.x < int(GetBasisFuncCount().x) && sample_idx.y >= 0 && sample_idx.y < int(GetBasisFuncCount().y))
+        //if(sample_idx.x == 1 && sample_idx.y == 0)
+          node_color = texelFetch(cascade_img, sample_idx, 0);
+        colors[offset_idx] = node_color;
+      }
+      LineBasis line_basis = GetLineBasis(vec2(func_idx) + vec2(0.5f));
+      vec4 weights = GetLineBasisBilinearWeights(line_basis.origin_range, line_basis.delta_range, gl_FragCoord.xy, 30u);
+      color += colors * weights * 3.0f;
     }
   }
 
@@ -120,7 +168,7 @@ void BasisTestShader(
     float ang = ratio * 3.141592f * 2.0f;
     vec2 ray_dir = vec2(cos(ang), sin(ang));
     vec2 ray_origin = gl_FragCoord.xy;
-    vec2 uv = RayToUvLineBasis(line_basis_edge0, line_basis_edge1, gl_FragCoord.xy, ray_dir);
+    vec2 uv = RayToUvLineBasis(origin_range, delta_range, gl_FragCoord.xy, ray_dir);
     vec4 ray_color = colors * GetBilinearWeights(uv);
 
     if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
@@ -163,9 +211,8 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
   }
 }}
 
-
-[declaration: "line_basis"]
-[include: "utils"]
+[declaration: "hrc_basis"]
+[include: "utils", "bilinear_interpolation"]
 {{
   struct Ray
   {
@@ -173,22 +220,61 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
     vec2 dir;
   };
 
-  Ray UvToRayLineBasis(vec4 line_basis_edge0, vec4 line_basis_edge1, vec2 uv)
+  Ray UvToRayLineBasis(vec4 origin_range, vec4 delta_range, vec2 uv)
   {
     Ray res_ray;
-    vec2 p0 = mix(line_basis_edge0.xy, line_basis_edge0.zw, uv.x);
-    vec2 p1 = mix(line_basis_edge1.xy, line_basis_edge1.zw, uv.y);
-    res_ray.origin = p0;
-    res_ray.dir = p1 - p0;
+    res_ray.origin = mix(origin_range.xy, origin_range.zw, uv.x);
+    res_ray.dir = mix(delta_range.xy, delta_range.zw, uv.y);
     return res_ray;
   }
 
-  vec2 RayToUvLineBasis(vec4 line_basis_edge0, vec4 line_basis_edge1, vec2 ray_origin, vec2 ray_dir)
+  vec2 RayToUvLineBasis(vec4 origin_range, vec4 delta_range, vec2 ray_origin, vec2 ray_dir)
   {
     return vec2(
-      EdgeEdgeIntersectParam(line_basis_edge0, vec4(ray_origin, ray_origin + ray_dir)).x,
-      EdgeEdgeIntersectParam(line_basis_edge1, vec4(ray_origin, ray_origin + ray_dir)).x
+      EdgeEdgeIntersectParam(origin_range, vec4(ray_origin, ray_origin + ray_dir)).x,
+      EdgeEdgeIntersectParam(ray_origin.xyxy + delta_range, vec4(ray_origin, ray_origin + ray_dir)).x
     );
+  }
+
+  vec4 GetLineBasisBilinearWeights(vec4 origin_range, vec4 delta_range, vec2 p, const uint steps_count)
+  {
+    vec4 weights = vec4(0.0f);
+    uvec2 step_idx;
+    for(step_idx.y = 0u; step_idx.y < steps_count; step_idx.y++)
+    {
+      for(step_idx.x = 0u; step_idx.x < steps_count; step_idx.x++)
+      {
+        vec2 uv = (vec2(step_idx) + vec2(0.5f)) / float(steps_count);
+        Ray ray = UvToRayLineBasis(origin_range, delta_range, uv);
+
+        if(abs(PointLineDist(p, ray.origin, ray.origin + ray.dir)) < 1.0f)
+        {
+          weights += GetBilinearWeights(uv) / float(steps_count * steps_count);
+        }
+      }
+    }
+    return weights;
+  }
+
+  struct LineBasis
+  {
+    vec4 origin_range;
+    vec4 delta_range;
+  };
+
+  uvec2 GetBasisFuncCount()
+  {
+    return uvec2(20u, 10u);
+  }
+  LineBasis GetLineBasis(vec2 func_idxf)
+  {
+    float probe_spacing = 20.0f;
+    LineBasis line_basis;
+    line_basis.origin_range = vec4(300.0f, func_idxf.x * probe_spacing, 300.0f, (func_idxf.x + 1.0f) * probe_spacing);
+    //float delta_step = 2.0f / float(GetBasisFuncCount().y - 1u);
+    float delta_step = 2.0f / float(GetBasisFuncCount().y);
+    line_basis.delta_range = vec4(1.0f, -1.0f + delta_step * func_idxf.y, 1.0f, -1.0f + delta_step * (func_idxf.y + 1.0f));
+    return line_basis;
   }
 }}
 
