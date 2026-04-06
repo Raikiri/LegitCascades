@@ -43,7 +43,8 @@ void RenderGraphMain()
 
   LoadCheckerboard(GetSwapchainImage(), c0_probe_spacing);
 
-  float length_scale = SliderFloat("length_scale", 0.0f, 5.0f, 1.0f);
+  BasisTestShader(GetSwapchainImage());
+  /*float length_scale = SliderFloat("length_scale", 0.0f, 5.0f, 1.0f);
   int test_probe_idx_x = SliderInt("probe_idx_x", 0, 100, 0);
   int test_probe_idx_y = SliderInt("probe_idx_y", 0, 100, 0);
   float shrinkage = SliderFloat("shrinkage", 0.0f, 5.0f, 1.0f);
@@ -56,39 +57,82 @@ void RenderGraphMain()
     length_scale,
     shrinkage,
     connect_lines,
-    GetSwapchainImage());
+    GetSwapchainImage());*/
 
   Text("Fps: " + GetSmoothFps());
 }}
 
-[include: "config", "pcg", "utils", "block_probes"]
-void ProbeLayoutTestShader(
-  uint c0_probe_spacing,
-  uint c0_dirs_count,
-  ivec2 test_probe_idx,
-  float length_scale,
-  float shrinkage,
-  int connect_lines,
-  out vec4 color)
+[include: "line_basis", "bilinear_interpolation"]
+[blendmode: additive]
+void BasisTestShader(
+    out vec4 color
+)
 {{
-  ivec2 pixel_idx = ivec2(gl_FragCoord.xy);
-  ivec2 tile_idx = pixel_idx / int(c0_probe_spacing);
-  color = vec4(0.005f) * GetCheckerboard(tile_idx);
+  uvec2 step_idx;
 
-  for(uint cascade_idx = 0u; cascade_idx < 5u; cascade_idx++)
+  vec4 line_basis_edge0 = vec4(100.0f, 100.0f, 100.0f, 150.0f);
+  vec4 line_basis_edge1 = vec4(200.0f, 100.0f, 200.0f, 150.0f);
+
+  color = vec4(0.0f);
+
+  if(
+    PointEdgeDist(gl_FragCoord.xy, line_basis_edge0.xy, line_basis_edge0.zw) < 2.0f)
   {
-    uint probe_spacing = c0_probe_spacing << cascade_idx;
-    uint dirs_count = c0_dirs_count << cascade_idx;
-    ivec2 cascade_probe_idx = test_probe_idx >> cascade_idx;
-    for(uint dir_idx = 0u; dir_idx < dirs_count; dir_idx++)
+    color += vec4(0.0f, 1.0f, 0.0f, 0.0f);
+  }
+
+  if(
+    PointEdgeDist(gl_FragCoord.xy, line_basis_edge1.xy, line_basis_edge1.zw) < 2.0f)
+  {
+    color += vec4(1.0f, 0.0f, 0.0f, 0.0f);
+  }
+
+  mat4 colors = mat4(
+    vec4(1.0f, 0.0f, 0.0f, 0.0f),
+    vec4(0.0f, 0.0f, 0.0f, 0.0f),
+    vec4(0.0f, 1.0f, 0.0f, 0.0f),
+    vec4(0.0f, 0.0f, 0.0f, 0.0f)
+  );
+
+  const uint steps_count = 30u;
+  for(step_idx.y = 0u; step_idx.y <= steps_count; step_idx.y++)
+  {
+    for(step_idx.x = 0u; step_idx.x <= steps_count; step_idx.x++)
     {
-      if(IsPointInPolygon(gl_FragCoord.xy, cascade_probe_idx, float(dir_idx), float(probe_spacing), dirs_count, length_scale, connect_lines == 1, shrinkage))
+      vec2 uv = (vec2(step_idx)) / float(steps_count);
+      Ray ray = UvToRayLineBasis(line_basis_edge0, line_basis_edge1, uv);
+
+      vec4 ray_color = colors * GetBilinearWeights(uv);
+      vec2 rec_uv = RayToUvLineBasis(line_basis_edge0, line_basis_edge1, ray.origin, ray.dir);
+
+      if(abs(PointLineDist(gl_FragCoord.xy, ray.origin, ray.origin + ray.dir)) < 1.0f)
       {
-        color += vec4(hash3i3f(ivec3(dir_idx, 0, 0)), 0.0f) * 0.4f;
+        //color += (length(uv - rec_uv) < 0.01f ? vec4(0.0f, 1.0f, 0.0f, 0.0f) : vec4(1.0f, 0.0f, 0.0f, 0.0f)) / float(steps_count * steps_count);
+        color += ray_color / float(steps_count * steps_count) * 5.0;
       }
     }
   }
+
+  /*const uint steps_count = 900u;
+  for(uint step_idx = 0u; step_idx < steps_count; step_idx++)
+  {
+    float ratio = (float(step_idx) + 0.5f) / float(steps_count);
+    float ang = ratio * 3.141592f * 2.0f;
+    vec2 ray_dir = vec2(cos(ang), sin(ang));
+    vec2 ray_origin = gl_FragCoord.xy;
+    vec2 uv = RayToUvLineBasis(line_basis_edge0, line_basis_edge1, gl_FragCoord.xy, ray_dir);
+    vec4 ray_color = colors * GetBilinearWeights(uv);
+
+    if(uv.x > 0.0f && uv.y > 0.0f && uv.x < 1.0f && uv.y < 1.0f)
+    {
+      //color += (length(uv - rec_uv) < 0.01f ? vec4(0.0f, 1.0f, 0.0f, 0.0f) : vec4(1.0f, 0.0f, 0.0f, 0.0f)) / float(steps_count * steps_count);
+      color += ray_color / float(steps_count);
+    }
+  }*/
+
+  //color = vec4(1.0f, 0.5f, 0.0f, 0.0f);
 }}
+
 
 [include: "utils"]
 void LoadCheckerboard(out vec4 col, uint spacing)
@@ -120,150 +164,63 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
 }}
 
 
-[include: "aabb"]
-[declaration: "block_probes"]
+[declaration: "line_basis"]
+[include: "utils"]
 {{
-  vec4 GetProbeInnerAabb(ivec2 probe_idx, float probe_spacing, float length_scale)
+  struct Ray
   {
-    return vec4(vec2(probe_idx) - vec2(1.0f) * length_scale, vec2(probe_idx) + vec2(1.0f + length_scale)) * probe_spacing;
-  }
-
-  vec4 GetProbeOuterAabb(ivec2 probe_idx, float probe_spacing, float length_scale)
-  {
-    ivec2 parent_probe_idx = probe_idx / 2;
-    float parent_probe_spacing = probe_spacing * 2.0f;
-    return GetProbeInnerAabb(parent_probe_idx, parent_probe_spacing, length_scale);
-  }
-
-  struct Line
-  {
-    vec2 points[2];
+    vec2 origin;
+    vec2 dir;
   };
-  Line GetProbeLineConnected(ivec2 probe_idx, float dir_idxf, float probe_spacing, uint dirs_count, float length_scale)
+
+  Ray UvToRayLineBasis(vec4 line_basis_edge0, vec4 line_basis_edge1, vec2 uv)
   {
-    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, probe_spacing, length_scale);
-    vec4 outer_aabb = GetProbeOuterAabb(probe_idx, probe_spacing, length_scale);
-
-    float dir_ratio = (dir_idxf + 0.5f) / float(dirs_count);
-
-    vec2 norm_points[2];
-    norm_points[0] = GetNormAabbPerimeterPoint(dir_ratio);
-    norm_points[1] = GetNormAabbPerimeterPoint(dir_ratio);
-
-    Line probe_line;
-    probe_line.points[0] = mix(inner_aabb.xy, inner_aabb.zw, norm_points[0]);
-    probe_line.points[1] = mix(outer_aabb.xy, outer_aabb.zw, norm_points[1]);
-    return probe_line;
-  }
-  Line GetProbeLineDisconnected(ivec2 probe_idx, float dir_idxf, float probe_spacing, uint dirs_count, float length_scale)
-  {
-    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, probe_spacing, length_scale);
-    vec4 outer_aabb = GetProbeOuterAabb(probe_idx, probe_spacing, length_scale);
-
-    float dir_ratio = (dir_idxf + 0.5f) / float(dirs_count);
-
-    vec2 norm_point;
-    norm_point = GetNormAabbPerimeterPoint(dir_ratio);
-    vec2 ray_dir = normalize(norm_point - vec2(0.5f));
-
-    Line probe_line;
-    probe_line.points[0] = mix(inner_aabb.xy, inner_aabb.zw, norm_point);
-
-    vec2 t = RayAabbIntersect(outer_aabb.xy, outer_aabb.zw, probe_line.points[0], ray_dir);
-    probe_line.points[1] = probe_line.points[0] + ray_dir * t.y;
-    return probe_line;
+    Ray res_ray;
+    vec2 p0 = mix(line_basis_edge0.xy, line_basis_edge0.zw, uv.x);
+    vec2 p1 = mix(line_basis_edge1.xy, line_basis_edge1.zw, uv.y);
+    res_ray.origin = p0;
+    res_ray.dir = p1 - p0;
+    return res_ray;
   }
 
-  bool IsPointInPolygon(vec2 point, ivec2 probe_idx, float dir_idx, float probe_spacing, uint dirs_count, float length_scale, bool connect_lines, float margin)
+  vec2 RayToUvLineBasis(vec4 line_basis_edge0, vec4 line_basis_edge1, vec2 ray_origin, vec2 ray_dir)
   {
-    Line min_probe_line;
-    Line max_probe_line;
-    if(connect_lines)
-    {
-      min_probe_line = GetProbeLineConnected(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
-      max_probe_line = GetProbeLineConnected(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
-    }else
-    {
-      min_probe_line = GetProbeLineDisconnected(probe_idx, float(dir_idx) - 0.5f, probe_spacing, dirs_count, length_scale);
-      max_probe_line = GetProbeLineDisconnected(probe_idx, float(dir_idx) + 0.5f, probe_spacing, dirs_count, length_scale);
-    }
-
-    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, float(probe_spacing), length_scale);
-    vec4 outer_aabb = GetProbeOuterAabb(probe_idx, float(probe_spacing), length_scale);
-    return
-      PointLineDist(point, min_probe_line.points[0], min_probe_line.points[1]) > margin &&
-      PointLineDist(point, max_probe_line.points[0], max_probe_line.points[1]) < -margin &&
-      !IsPointInAabb(point, vec4(inner_aabb.xy - vec2(margin), inner_aabb.zw + vec2(margin))) &&
-       IsPointInAabb(point, vec4(outer_aabb.xy + vec2(margin), outer_aabb.zw - vec2(margin)));
-  }
-
-
-  float GetProbeDirIdxf(ivec2 probe_idx, vec2 ray_origin, vec2 ray_dir, float probe_spacing, uint dirs_count, float debug_scale)
-  {
-    vec4 inner_aabb = GetProbeInnerAabb(probe_idx, probe_spacing, debug_scale);
-    vec2 t = RayAabbIntersect(inner_aabb.xy, inner_aabb.zw, ray_origin, ray_dir);
-    vec2 p = ray_origin + ray_dir * t.y;
-
-    vec2 norm_point = (p - inner_aabb.xy) / (inner_aabb.zw - inner_aabb.xy);
-    float dir_ratio = GetNormAabbPerimeterRatio(norm_point);
-    return dir_ratio * float(dirs_count) - 0.5f;
+    return vec2(
+      EdgeEdgeIntersectParam(line_basis_edge0, vec4(ray_origin, ray_origin + ray_dir)).x,
+      EdgeEdgeIntersectParam(line_basis_edge1, vec4(ray_origin, ray_origin + ray_dir)).x
+    );
   }
 }}
 
-[declaration: "aabb"]
+[declaration: "bilinear_interpolation"]
 {{
-  vec2 SafeInv(vec2 v)
+  struct BilinearSamples
   {
-    float large_val = 1e7f;
-    return vec2(
-      abs(v.x) > 0.0f ? 1.0f / v.x : large_val,
-      abs(v.y) > 0.0f ? 1.0f / v.y : large_val
-    );
-  }
-  vec2 RayAabbIntersect(vec2 aabb_min, vec2 aabb_max, vec2 ray_origin, vec2 ray_dir)
-  {
-    vec2 inv_dir = SafeInv(ray_dir);
-    vec2 t1 = (aabb_min - ray_origin) * inv_dir;
-    vec2 t2 = (aabb_max - ray_origin) * inv_dir;
+    ivec2 base_index;
+    vec2 ratio;
+  };
 
-    vec2 t;
-    t.x = max(min(t1.x, t2.x), min(t1.y, t2.y));
-    t.y = min(max(t1.x, t2.x), max(t1.y, t2.y));
-    return t;
-  }
-  
-  bool IsPointInAabb(vec2 point, vec4 aabb_minmax)
+  vec4 GetBilinearWeights(vec2 ratio)
   {
-    return
-      point.x >= aabb_minmax.x &&
-      point.x <= aabb_minmax.z &&
-      point.y >= aabb_minmax.y &&
-      point.y <= aabb_minmax.w;
+    return vec4(
+      (1.0f - ratio.x) * (1.0f - ratio.y),
+      ratio.x * (1.0f - ratio.y),
+      (1.0f - ratio.x) * ratio.y,
+      ratio.x * ratio.y);
   }
 
-  vec2 GetNormAabbPerimeterPoint(float ratio)
+  ivec2 GetBilinearOffset(uint offset_index)
   {
-    float perimeter_coord = ratio * 4.0f;
-    int side_idx = int(floor(perimeter_coord)) % 4;
-    float side_ratio = fract(perimeter_coord);
-
-    if(side_idx == 0) return vec2(side_ratio, 0.0f);
-    if(side_idx == 1) return vec2(1.0f, side_ratio);
-    if(side_idx == 2) return vec2(1.0f - side_ratio, 1.0f);
-    return vec2(0.0f, 1.0f - side_ratio);
+    ivec2 offsets[4] = ivec2[4](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1));
+    return offsets[offset_index];
   }
-
-  float GetNormAabbPerimeterRatio(vec2 point)
+  BilinearSamples GetBilinearSamples(vec2 pixel_index2f)
   {
-    float eps = 1e-2f;
-    if(point.y < eps)
-      return (point.x + 0.0f) / 4.0f;
-    if(point.x > 1.0f - eps)
-      return (point.y + 1.0f) / 4.0f;
-    if(point.y > 1.0f - eps)
-      return ((1.0f - point.x) + 2.0f) / 4.0f;
-    return ((1.0f - point.y) + 3.0f) / 4.0f;
-  }
+    BilinearSamples samples;
+    samples.base_index = ivec2(floor(pixel_index2f));
+    samples.ratio = fract(pixel_index2f);
+    return samples;
+  }  
 }}
 [declaration: "utils"]
 {{
@@ -305,6 +262,15 @@ void RenderPoint(uint c0_probe_spacing, vec2 light_pos, out vec4 color)
     bool s2 = PointLineDist(p, p2, p3) > margin;
     bool s3 = PointLineDist(p, p3, p0) > margin;
     return s0 && s1 && s2 && s3;
+  }
+  vec2 EdgeEdgeIntersectParam(vec4 edge0, vec4 edge1)
+  {
+    //edge0.xy + (edge0.zw - edge0.xy) * t.x == edge1.xy + (edge1.zw - edge1.xy) * t.y
+    vec2 d0 = edge0.zw - edge0.xy;
+    vec2 d1 = edge1.zw - edge1.xy;
+    vec2 r = edge1.xy - edge0.xy;
+    mat2 m = mat2(dot(d0, d0), dot(d0, d1), -dot(d1, d0), -dot(d1, d1));
+    return inverse(m) * vec2(dot(r, d0), dot(r, d1));
   }
 }}
 [declaration: "merging"]
